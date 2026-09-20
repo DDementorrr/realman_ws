@@ -54,3 +54,17 @@ bash scripts/verify_realman_gripper_gz_runtime.sh
 
 本仓库仅做 Gazebo 和 MoveIt 仿真。没有连接实机、没有启用串口/Modbus，并且
 CTM2F110E 与仓库中 CTM2F110 模型的等同性、法兰安装变换和真实负载参数尚未确认。
+
+## 工程文档库
+
+主工作空间的项目文档已完整同步到 [`docs/`](docs/)，包括构建报告、实验记录、使用指南、
+机器人参数说明、教材章节和原始系统说明 PDF。建议按以下入口阅读：
+
+- [指南索引](docs/guide/索引.md)：环境、架构、仿真和 MoveIt 使用说明；
+- [实验记录索引](docs/experiments/索引.md)：可复现的验证过程与结果；
+- [构建报告索引](docs/build-reports/索引.md)：工程变更和构建状态；
+- [机器人资料索引](docs/robots/索引.md)：各机械臂和夹爪的参数资料；
+- [教材索引](docs/textbook/教材索引.md)：运动学、规划、控制和双臂系统学习路线。
+
+`docs/迁移记录/` 保留本仓库面向 Ubuntu 22.04、ROS 2 Humble 和 Gazebo Harmonic 的迁移
+清单与报告；其他官方上游资产仍以 `upstream/*.repos` 和相应来源记录为准。
