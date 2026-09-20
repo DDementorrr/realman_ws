@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="rm65b_gazebo">
+  <!-- Manufacturer geometry and CAD inertial snapshot, standard RM65-B flange. -->
+  <xacro:include filename="$(find rm_description)/urdf/rm_65.urdf.xacro"/>
+
+  <link name="world"/>
+  <joint name="world_to_rm65b" type="fixed">
+    <parent link="world"/>
+    <child link="base_link"/>
+  </joint>
+
+  <ros2_control name="RM65BGazeboSystem" type="system">
+    <hardware><plugin>gz_ros2_control/GazeboSimSystem</plugin></hardware>
+    <xacro:macro name="controlled_joint" params="name initial">
+      <joint name="${name}">
+        <command_interface name="position"/>
+        <state_interface name="position"><param name="initial_value">${initial}</param></state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+    </xacro:macro>
+    <!-- Project simulation pose, chosen away from the all-zero wrist singularity. -->
+    <xacro:controlled_joint name="joint1" initial="0.0"/>
+    <xacro:controlled_joint name="joint2" initial="0.5"/>
+    <xacro:controlled_joint name="joint3" initial="-1.0"/>
+    <xacro:controlled_joint name="joint4" initial="0.0"/>
+    <xacro:controlled_joint name="joint5" initial="0.5"/>
+    <xacro:controlled_joint name="joint6" initial="0.0"/>
+  </ros2_control>
+
+  <gazebo>
+    <plugin filename="libgz_ros2_control-system.so" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+      <parameters>$(find robot_gazebo)/config/rm65b_controllers.yaml</parameters>
+      <ros><remapping>/robot_description:=/robot_description_gazebo</remapping></ros>
+      <hold_joints>true</hold_joints>
+      <position_proportional_gain>0.5</position_proportional_gain>
+    </plugin>
+  </gazebo>
+</robot>

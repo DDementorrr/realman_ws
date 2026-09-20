@@ -1,0 +1,40 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+  <xacro:macro name="base_link" params="prefix">
+    <link name="${prefix}base_link">
+      <inertial>
+        <origin xyz="-3.5971E-08 6.1102E-06 0.055353" rpy="0 0 0" />
+        <mass value="0.47237" />
+        <inertia ixx="0.00054317" ixy="-9.222E-09" ixz="2.4709E-09" iyy="0.00068105" iyz="-1.5078E-07" izz="0.00038996" />
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <geometry>
+          <mesh filename="package://robot_changingtek_description/meshes/base_link.STL" />
+        </geometry>
+        <material name="">
+          <color rgba="0.10196 0.10196 0.10196 1" />
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <geometry>
+          <mesh filename="package://robot_changingtek_description/meshes/base_link.STL" />
+        </geometry>
+      </collision>
+    </link>
+  </xacro:macro>
+
+  <xacro:macro name="finger_joints" params="prefix fingerprefix reflect">
+    <xacro:kckle_joint prefix="${prefix}" fingerprefix="${fingerprefix}" reflect="${reflect}"/>
+    <xacro:inn_joint prefix="${prefix}" fingerprefix="${fingerprefix}"/>
+    <xacro:pad_joint prefix="${prefix}" fingerprefix="${fingerprefix}"/>
+  </xacro:macro>
+
+  <xacro:macro name="finger_links" params="prefix fingerprefix">
+    <xacro:out_Link prefix="${prefix}" fingerprefix="${fingerprefix}"/>
+    <xacro:inn_Link prefix="${prefix}" fingerprefix="${fingerprefix}"/>
+    <xacro:pad prefix="${prefix}" fingerprefix="${fingerprefix}"/>
+    <xacro:kckle prefix="${prefix}" fingerprefix="${fingerprefix}"/>
+  </xacro:macro>
+</robot>

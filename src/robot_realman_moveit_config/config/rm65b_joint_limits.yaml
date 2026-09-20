@@ -1,0 +1,11 @@
+# Position and velocity limits follow the RM65 series manufacturer parameter page.
+# Acceleration limits are conservative project simulation values, not rated hardware limits.
+default_velocity_scaling_factor: 0.15
+default_acceleration_scaling_factor: 0.15
+joint_limits:
+  joint1: {has_position_limits: true, min_position: -3.106686, max_position: 3.106686, has_velocity_limits: true, max_velocity: 3.141593, has_acceleration_limits: true, max_acceleration: 2.0}
+  joint2: {has_position_limits: true, min_position: -2.268928, max_position: 2.268928, has_velocity_limits: true, max_velocity: 3.141593, has_acceleration_limits: true, max_acceleration: 2.0}
+  joint3: {has_position_limits: true, min_position: -2.356194, max_position: 2.356194, has_velocity_limits: true, max_velocity: 3.926991, has_acceleration_limits: true, max_acceleration: 2.0}
+  joint4: {has_position_limits: true, min_position: -3.106686, max_position: 3.106686, has_velocity_limits: true, max_velocity: 3.926991, has_acceleration_limits: true, max_acceleration: 2.0}
+  joint5: {has_position_limits: true, min_position: -2.234021, max_position: 2.234021, has_velocity_limits: true, max_velocity: 3.926991, has_acceleration_limits: true, max_acceleration: 2.0}
+  joint6: {has_position_limits: true, min_position: -6.283185, max_position: 6.283185, has_velocity_limits: true, max_velocity: 3.926991, has_acceleration_limits: true, max_acceleration: 2.0}

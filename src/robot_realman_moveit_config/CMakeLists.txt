@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.16)
+project(robot_realman_moveit_config)
+find_package(ament_cmake REQUIRED)
+install(DIRECTORY config rviz urdf DESTINATION share/${PROJECT_NAME})
+ament_package()

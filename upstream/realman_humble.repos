@@ -1,0 +1,5 @@
+repositories:
+  realman_ros2:
+    type: git
+    url: https://github.com/RealManRobot/ros2_rm_robot.git
+    version: c941b565e4f9174afa36561f143ef5fbbb744750

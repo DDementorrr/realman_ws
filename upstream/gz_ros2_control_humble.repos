@@ -1,0 +1,8 @@
+# Humble + Harmonic is a non-default pairing. The official instructions require
+# the humble branch to be built from source with GZ_VERSION=harmonic.
+# The full commit was taken from the official Humble CI commit page on 2026-09-20.
+repositories:
+  gz_ros2_control:
+    type: git
+    url: https://github.com/ros-controls/gz_ros2_control.git
+    version: 522ca0e0d3560dc8c52628e9f52b86db78673920

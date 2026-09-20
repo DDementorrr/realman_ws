@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="rm_65_description">
+  <xacro:include filename="$(find rm_description)/urdf/rm_65.urdf.xacro"/>
+  <xacro:include filename="$(find robot_changingtek_description)/urdf/ctm2f110.urdf.xacro"/>
+  <!-- Identity mount is a simulation placeholder, not a measured RM65B/CTM2F110E adapter. -->
+  <xacro:ctm2f110_gripper parent="Link6" prefix="ctm2f110_" mount_xyz="0 0 0" mount_rpy="0 0 0"/>
+</robot>
