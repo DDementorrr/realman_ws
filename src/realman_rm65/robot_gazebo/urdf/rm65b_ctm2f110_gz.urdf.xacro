@@ -1,0 +1,100 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="rm65b_ctm2f110_gazebo">
+  <xacro:arg name="pick_place_attachment" default="false"/>
+  <xacro:arg name="physical_grasp" default="false"/>
+  <xacro:include filename="$(find robot_realman_moveit_config)/urdf/rm65b_ctm2f110.urdf.xacro"/>
+  <link name="world"/>
+  <joint name="world_to_rm65b" type="fixed"><parent link="world"/><child link="base_link"/></joint>
+  <xacro:if value="$(arg wrist_camera)">
+    <gazebo reference="wrist_camera_link">
+      <sensor name="wrist_rgbd" type="rgbd_camera">
+        <!-- Gazebo camera +X maps to flange +Z. -->
+        <pose>0 0 0 0 -1.57079632679 0</pose>
+        <always_on>true</always_on><update_rate>15</update_rate>
+        <topic>/pick_place/rgbd</topic>
+        <camera><horizontal_fov>1.20</horizontal_fov>
+          <image><width>640</width><height>480</height></image>
+          <clip><near>0.03</near><far>2.0</far></clip>
+          <optical_frame_id>camera_color_optical_frame</optical_frame_id>
+        </camera>
+      </sensor>
+    </gazebo>
+  </xacro:if>
+  <ros2_control name="RM65BCTM2F110GazeboSystem" type="system">
+    <hardware><plugin>gz_ros2_control/GazeboSimSystem</plugin></hardware>
+    <xacro:macro name="controlled_joint" params="name initial">
+      <joint name="${name}">
+        <command_interface name="position"/>
+        <state_interface name="position"><param name="initial_value">${initial}</param></state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+    </xacro:macro>
+    <xacro:controlled_joint name="joint1" initial="0.0"/>
+    <xacro:controlled_joint name="joint2" initial="0.5"/>
+    <xacro:controlled_joint name="joint3" initial="-1.0"/>
+    <xacro:controlled_joint name="joint4" initial="0.0"/>
+    <xacro:controlled_joint name="joint5" initial="0.5"/>
+    <xacro:controlled_joint name="joint6" initial="0.0"/>
+    <!-- Project simulation pose: partially open and away from either hard stop. -->
+    <xacro:controlled_joint name="ctm2f110_finger_joint" initial="0.3"/>
+    <!-- Mimic joints have state only; Gazebo applies their URDF mimic relations. -->
+    <xacro:macro name="mimic_state" params="name initial">
+      <joint name="${name}">
+        <state_interface name="position"><param name="initial_value">${initial}</param></state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+    </xacro:macro>
+    <xacro:mimic_state name="ctm2f110_rightout_joint" initial="0.3"/>
+    <xacro:mimic_state name="ctm2f110_leftinn_joint" initial="-0.3"/>
+    <xacro:mimic_state name="ctm2f110_rightinn_joint" initial="-0.3"/>
+    <xacro:mimic_state name="ctm2f110_left_kckle_joint" initial="0.3"/>
+    <xacro:mimic_state name="ctm2f110_right_kckle_joint" initial="0.3"/>
+    <xacro:if value="$(arg pad_compliance)">
+      <xacro:mimic_state name="ctm2f110_left_pad_joint" initial="0.0"/>
+      <xacro:mimic_state name="ctm2f110_right_pad_joint" initial="0.0"/>
+    </xacro:if>
+  </ros2_control>
+  <gazebo>
+    <plugin filename="libgz_ros2_control-system.so" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+      <xacro:if value="$(arg physical_grasp)">
+        <parameters>$(find robot_gazebo)/config/rm65b_ctm2f110_physical_controllers.yaml</parameters>
+      </xacro:if>
+      <xacro:unless value="$(arg physical_grasp)">
+        <parameters>$(find robot_gazebo)/config/rm65b_ctm2f110_controllers.yaml</parameters>
+      </xacro:unless>
+      <robot_param>robot_description</robot_param>
+      <robot_param_node>gazebo_description_publisher</robot_param_node>
+      <ros><remapping>/robot_description:=/robot_description_gazebo</remapping></ros>
+      <hold_joints>true</hold_joints>
+      <position_proportional_gain>0.5</position_proportional_gain>
+    </plugin>
+  </gazebo>
+  <xacro:if value="$(arg pick_place_attachment)">
+    <!-- Simulation-only anchor: at the side-grasp TCP with an upright object frame. -->
+    <link name="pick_place_grasp_anchor">
+      <inertial>
+        <mass value="0.0001"/>
+        <inertia ixx="0.00000001" ixy="0" ixz="0" iyy="0.00000001" iyz="0" izz="0.00000001"/>
+      </inertial>
+    </link>
+    <joint name="pick_place_grasp_anchor_joint" type="fixed">
+      <parent link="Link6"/>
+      <child link="pick_place_grasp_anchor"/>
+      <origin xyz="0 0 0.14" rpy="0 -1.57079632679 0"/>
+    </joint>
+    <gazebo reference="pick_place_grasp_anchor_joint">
+      <preserveFixedJoint>true</preserveFixedJoint>
+    </gazebo>
+    <!-- The DetachableJoint system is loaded at grasp time, never at spawn:
+         its built-in initial attachment would otherwise pull the object away. -->
+  </xacro:if>
+  <xacro:if value="$(arg physical_grasp)">
+    <!-- Contact-only variant: higher pad friction, no detachable joint. -->
+    <gazebo reference="ctm2f110_left_pad">
+      <mu1>4.0</mu1><mu2>4.0</mu2>
+    </gazebo>
+    <gazebo reference="ctm2f110_right_pad">
+      <mu1>4.0</mu1><mu2>4.0</mu2>
+    </gazebo>
+  </xacro:if>
+</robot>

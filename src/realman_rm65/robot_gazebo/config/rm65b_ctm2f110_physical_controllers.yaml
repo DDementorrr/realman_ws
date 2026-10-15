@@ -1,0 +1,31 @@
+controller_manager:
+  ros__parameters:
+    update_rate: 250
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+    rm65b_arm_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+    ctm2f110_hand_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+rm65b_arm_controller:
+  ros__parameters:
+    joints: [joint1, joint2, joint3, joint4, joint5, joint6]
+    command_interfaces: [position]
+    state_interfaces: [position, velocity]
+    allow_partial_joints_goal: false
+    action_monitor_rate: 20.0
+    constraints: {stopped_velocity_tolerance: 0.02, goal_time: 1.0}
+
+ctm2f110_hand_controller:
+  ros__parameters:
+    joints: [ctm2f110_finger_joint]
+    command_interfaces: [position]
+    state_interfaces: [position, velocity]
+    allow_partial_joints_goal: false
+    action_monitor_rate: 20.0
+    constraints:
+      stopped_velocity_tolerance: 0.02
+      goal_time: 1.0
+      # Accept contact-limited closure while maintaining the commanded squeeze.
+      ctm2f110_finger_joint: {goal: 0.18}

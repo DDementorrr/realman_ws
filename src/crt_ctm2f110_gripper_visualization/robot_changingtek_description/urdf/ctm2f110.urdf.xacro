@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:arg name="physical_grasp" default="false"/>
+  <xacro:arg name="pad_compliance" default="false"/>
+  <!-- Geometry, joints and inertials come from the ROS 1 CTM2F110 sync model.
+       The mount pose is explicitly a project simulation assumption. -->
+  <xacro:include filename="$(find robot_changingtek_description)/urdf/upstream/crt_ctm2f110_model_macro.xacro"/>
+  <xacro:macro name="ctm2f110_gripper" params="parent prefix mount_xyz:='0 0 0' mount_rpy:='0 0 0'">
+    <xacro:crt_ctm_2f_110 prefix="${prefix}"/>
+    <joint name="${prefix}mount_joint" type="fixed">
+      <parent link="${parent}"/>
+      <child link="${prefix}base_link"/>
+      <origin xyz="${mount_xyz}" rpy="${mount_rpy}"/>
+    </joint>
+    <!--
+      MoveIt uses this fixed TCP for arm pose goals and the RViz interactive
+      marker.  It is centered in the open space between the two pads rather
+      than on the RM65B flange, while the actual finger branches remain
+      unchanged for Gazebo and gripper planning.
+    -->
+    <link name="${prefix}tool0"/>
+    <joint name="${prefix}tool0_joint" type="fixed">
+      <parent link="${prefix}base_link"/>
+      <child link="${prefix}tool0"/>
+      <origin xyz="0 0 0.14" rpy="0 0 0"/>
+    </joint>
+  </xacro:macro>
+</robot>

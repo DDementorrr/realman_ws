@@ -1,0 +1,9 @@
+ctm2f110_driver:
+  ros__parameters:
+    serial_port: /dev/ttyUSB0
+    baud_rate: 115200
+    dry_run: true
+    readback: true
+    joint_name: ctm2f110_finger_joint
+    min_position: 0.0
+    max_position: 1.0

@@ -1,0 +1,10 @@
+known_pick_place_scene:
+  ros__parameters:
+    frame_id: world
+    object_id: pick_object
+    object_size: [0.05, 0.05, 0.22]
+    object_pose: [0.43, -0.18, 0.52, 0.0, 0.0, 0.0]
+    place_pose: [0.43, 0.18, 0.52, 0.0, 0.0, 0.0]
+    table_id: pick_table
+    table_size: [0.42, 0.60, 0.06]
+    table_pose: [0.52, 0.0, 0.38, 0.0, 0.0, 0.0]

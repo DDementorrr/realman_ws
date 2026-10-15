@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>pick_place_sim</name>
+  <version>0.1.0</version>
+  <description>Gazebo Harmonic attachment and object-pose adapter for RM65B Pick and Place simulation.</description>
+  <maintainer email="ww@example.com">ww</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>geometry_msgs</depend>
+  <depend>rclcpp</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <build_depend>gz-msgs10</build_depend>
+  <build_depend>gz-transport13</build_depend>
+  <exec_depend>pick_place_demo</exec_depend>
+  <exec_depend>pick_place_mtc</exec_depend>
+  <exec_depend>moveit_task_constructor_msgs</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

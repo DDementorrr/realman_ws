@@ -1,0 +1,233 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+  <!--xacro:include filename="$(find crt_ctm2f110_gripper_visualization)/urdf/crt_ctm_2f_110_transmission.xacro" /-->
+
+ <xacro:macro name="out_Link" params="prefix fingerprefix">
+    <link name="${prefix}${fingerprefix}out_Link">
+      <inertial>
+      <origin xyz="-0.0068505 0.028833 -8.8224E-08" rpy="0 0 0" />
+      <mass value="0.010089" />
+      <inertia
+        ixx="3.7101E-06"
+        ixy="6.4157E-07"
+        ixz="9.3979E-12"
+        iyy="1.1175E-06"
+        iyz="-4.9338E-11"
+        izz="3.12E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://robot_changingtek_description/meshes/${fingerprefix}out_Link.STL" />
+      </geometry>
+      <material name="">
+        <color rgba="0.66667 0.69804 0.76863 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://robot_changingtek_description/meshes/${fingerprefix}out_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  </xacro:macro>
+  
+  <xacro:macro name="kckle" params="prefix fingerprefix">
+    <link name="${prefix}${fingerprefix}_kckle">
+       <inertial>
+      <origin
+        xyz="-0.0057173 0.023663 -3.1623E-06" rpy="0 0 0" />
+      <mass value="0.012137" />
+      <inertia
+        ixx="1.086E-05"
+        ixy="1.05E-06"
+        ixz="6.9749E-10"
+        iyy="6.7673E-06"
+        iyz="-7.7731E-10"
+        izz="5.0823E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://robot_changingtek_description/meshes/${fingerprefix}_kckle.STL" />
+      </geometry>
+      <material name="">
+        <color rgba="0.2 0.2 0.2 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://robot_changingtek_description/meshes/${fingerprefix}_kckle.STL" />
+      </geometry>
+    </collision>      
+    </link>
+  </xacro:macro>
+
+   <xacro:macro name="inn_Link" params="prefix fingerprefix">
+    <link name="${prefix}${fingerprefix}inn_Link">
+    <inertial>
+      <origin xyz="-0.030058 0.022769 5.1949E-07" rpy="0 0 0" />
+      <mass value="0.018332" />
+      <inertia
+        ixx="6.7469E-06"
+        ixy="3.6682E-06"
+        ixz="9.1466E-11"
+        iyy="3.9665E-06"
+        iyz="-4.1418E-10"
+        izz="9.6683E-06" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://robot_changingtek_description/meshes/${fingerprefix}inn_Link.STL" />
+      </geometry>
+      <material name="">
+        <color rgba="0.79216 0.81961 0.93333 1" />
+      </material>
+    </visual>
+    <!-- Physical contact trials suppress the inner mesh, which protrudes
+         into the object before the pad; standard robot geometry is unchanged. -->
+    <xacro:unless value="$(arg physical_grasp)">
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <geometry>
+          <mesh filename="package://robot_changingtek_description/meshes/${fingerprefix}inn_Link.STL" />
+        </geometry>
+      </collision>
+    </xacro:unless>
+    </link>
+  </xacro:macro>
+
+  <xacro:macro name="pad" params="prefix fingerprefix">
+    <link name="${prefix}${fingerprefix}_pad">
+      <inertial>
+      <origin
+        xyz="0.013913 -0.019134 4.0039E-06"
+        rpy="0 0 0" />
+      <mass
+        value="0.018332" />
+      <inertia
+        ixx="6.7469E-06"
+        ixy="3.6682E-06"
+        ixz="8.8651E-11"
+        iyy="3.9665E-06"
+        iyz="-4.0981E-10"
+        izz="9.6683E-06"/>
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://robot_changingtek_description/meshes/${fingerprefix}_pad.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.79216 0.81961 0.93333 1" />
+      </material>
+    </visual>
+    <collision>
+      <xacro:if value="$(arg physical_grasp)">
+        <!-- Stage 4 rubber contact surface; visual remains the vendor STL. -->
+        <origin xyz="-0.001 0.00041 0" rpy="0 0 0"/>
+        <geometry><box size="0.004 0.045 0.030"/></geometry>
+      </xacro:if>
+      <xacro:unless value="$(arg physical_grasp)">
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="package://robot_changingtek_description/meshes/${fingerprefix}_pad.STL"/>
+        </geometry>
+      </xacro:unless>
+    </collision>
+    </link>
+  </xacro:macro>
+
+  <xacro:macro name="pad_joint" params="prefix fingerprefix">
+    <joint name="${prefix}${fingerprefix}_pad_joint" type="${'prismatic' if '$(arg pad_compliance)' == 'true' else 'fixed'}">
+      <origin xyz="-0.04597 0.041903 0" rpy="0 0 0" />
+      <parent link="${prefix}${fingerprefix}inn_Link" />
+      <child link="${prefix}${fingerprefix}_pad" />
+      <xacro:if value="$(arg pad_compliance)">
+        <!-- Passive rubber surrogate: 2 mm travel, 5 N/mm stiffness.
+             Bullet Featherstone implements SDF joint spring/damping. -->
+        <axis xyz="1 0 0"/>
+        <limit lower="-0.002" upper="0.002" effort="10" velocity="0.1"/>
+        <dynamics damping="19" friction="0"/>
+      </xacro:if>
+    </joint>
+    <xacro:if value="$(arg pad_compliance)">
+      <gazebo reference="${prefix}${fingerprefix}_pad_joint">
+        <springReference>0</springReference>
+        <springStiffness>5000</springStiffness>
+      </gazebo>
+    </xacro:if>
+  <!--mimic joint="${prefix}finger_joint" multiplier="1" offset="0" /-->
+  </xacro:macro>
+
+  <xacro:macro name="inn_joint" params="prefix fingerprefix">
+    <joint name="${prefix}${fingerprefix}inn_joint" type="revolute">
+      <origin xyz="-0.010946 0.0539 0" rpy="0 0 0" />
+      <parent link="${prefix}${fingerprefix}out_Link" />
+      <child link="${prefix}${fingerprefix}inn_Link" />
+      <axis xyz="0 0 -1"/>
+      <limit lower="-1" upper="0" velocity="2.0" effort="1000" />
+      <mimic joint="${prefix}finger_joint" multiplier="-1" offset="0" />
+    </joint>
+  </xacro:macro>
+ 
+  <xacro:macro name="kckle_joint" params="prefix fingerprefix reflect">
+    <joint name="${prefix}${fingerprefix}_kckle_joint" type="revolute">
+      <origin xyz="${reflect * -0.024} 0 0.09025" rpy="${pi / 2} 0 ${-(1 + reflect) * pi / 2}" />
+      <parent link="${prefix}base_link" />
+      <child link="${prefix}${fingerprefix}_kckle" />
+      <axis xyz="0 0 -1"/>
+      <limit lower="-1" upper="1" velocity="2.0" effort="1000" />
+      <mimic joint="${prefix}finger_joint" multiplier="1" offset="0" />
+    </joint>
+  </xacro:macro> 
+
+  <xacro:include filename="$(find robot_changingtek_description)/urdf/upstream/crt_ctm2f110.xacro" />
+  
+  <xacro:macro name="finger_joint" params="prefix">
+    <joint name="${prefix}finger_joint" type="revolute">
+      <origin xyz="-0.057 0 0.07825" rpy="1.5708 0 -3.1416" />
+      <parent link="${prefix}base_link" />
+      <child link="${prefix}leftout_Link" />
+      <axis xyz="0 0 -1" />
+      <!-- Bullet's position-interface velocity motor uses effort * dt as
+           its maximum impulse. Limit squeeze for the contact-only model;
+           the vendor 1000 Nm value otherwise overwhelms a 30 g object. -->
+      <limit lower="0" upper="1" velocity="2.0" effort="${1.0 if '$(arg physical_grasp)' == 'true' else 1000}" />
+    </joint>
+    <xacro:finger_joints prefix="${prefix}" fingerprefix="left" reflect="1.0"/>
+  </xacro:macro>
+
+  <xacro:macro name="rightout_joint" params="prefix">
+    <joint name="${prefix}rightout_joint" type="revolute">
+      <origin xyz="0.057 0 0.07825" rpy="1.5708 0 0" />
+      <parent link="${prefix}base_link" />
+      <child link="${prefix}rightout_Link" />
+      <axis xyz="0 0 -1" />
+      <limit lower="0" upper="1" velocity="2.0" effort="1000" />
+    <mimic joint="${prefix}finger_joint" multiplier="1" offset="0" />
+    </joint>
+    <xacro:finger_joints prefix="${prefix}" fingerprefix="right" reflect="-1.0"/>
+  </xacro:macro>
+
+  <xacro:macro name="crt_ctm_2f_110" params="prefix">
+    <xacro:base_link prefix="${prefix}"/>
+    <xacro:finger_links prefix="${prefix}" fingerprefix="left" />
+    <xacro:finger_links prefix="${prefix}" fingerprefix="right" />
+    <xacro:finger_joint prefix="${prefix}"/>
+    <xacro:rightout_joint prefix="${prefix}"/>
+    <!--xacro:crt_ctm_2f_110_transmission prefix="${prefix}"/-->
+  </xacro:macro>
+</robot> 

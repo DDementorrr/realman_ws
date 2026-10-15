@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>changingtek_gripper_driver</name>
+  <version>0.1.0</version>
+  <description>ROS 2 hardware driver and trajectory interface for the CTM2F110 gripper.</description>
+  <maintainer email="ww@example.com">ww</maintainer>
+  <license>BSD-3-Clause</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>control_msgs</depend>
+  <depend>rclcpp</depend>
+  <depend>rclcpp_action</depend>
+  <depend>sensor_msgs</depend>
+  <depend>trajectory_msgs</depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>
