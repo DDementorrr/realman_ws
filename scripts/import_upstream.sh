@@ -16,11 +16,14 @@ if [[ -d "$workspace_root/upstream/realman_ros2/.git" ]]; then
   exit 0
 fi
 
-command -v vcs >/dev/null 2>&1 || {
-  echo "FAIL vcstool is missing; install python3-vcstool" >&2
-  exit 1
-}
-vcs import "$workspace_root/upstream" < "$workspace_root/upstream/realman_humble.repos"
+if command -v vcs >/dev/null 2>&1; then
+  vcs import "$workspace_root/upstream" < "$workspace_root/upstream/realman_humble.repos"
+else
+  echo "WARN vcstool is missing; using the single-repository git fallback" >&2
+  git clone https://github.com/RealManRobot/ros2_rm_robot.git "$workspace_root/upstream/realman_ros2"
+  git -C "$workspace_root/upstream/realman_ros2" fetch --depth 1 origin "$expected_commit"
+  git -C "$workspace_root/upstream/realman_ros2" checkout --detach "$expected_commit"
+fi
 actual_commit="$(git -C "$workspace_root/upstream/realman_ros2" rev-parse HEAD)"
 [[ "$actual_commit" == "$expected_commit" ]] || {
   echo "FAIL imported commit $actual_commit, expected $expected_commit" >&2

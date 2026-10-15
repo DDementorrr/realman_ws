@@ -30,6 +30,13 @@ fi
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] http://packages.osrfoundation.org/gazebo/ubuntu-stable ${UBUNTU_CODENAME} main" \
   | "${SUDO[@]}" tee /etc/apt/sources.list.d/gazebo-stable.list >/dev/null
 "${SUDO[@]}" apt-get update
+for required in gz-harmonic ros-humble-ros-gzharmonic ros-humble-ros-gzharmonic-bridge ros-humble-ros-gzharmonic-sim; do
+  apt-cache show "$required" >/dev/null 2>&1 || {
+    echo "FAIL $required is not available from the configured OSRF repositories" >&2
+    echo "Do not substitute ros-humble-ros-gz-*; those packages are the Fortress ABI on Humble." >&2
+    exit 4
+  }
+done
 "${SUDO[@]}" apt-get install -y \
   build-essential cmake git unzip zip pkg-config python3-pip python3-venv python3-dev \
   python3-colcon-common-extensions python3-vcstool python3-rosdep ros-dev-tools \
@@ -41,7 +48,11 @@ echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-
   ros-humble-joint-state-broadcaster ros-humble-joint-trajectory-controller \
   ros-humble-robot-state-publisher ros-humble-rviz2 ros-humble-xacro \
   ros-humble-tf2-tools python3-yaml
-rosdep init 2>/dev/null || true
+if [[ $EUID -eq 0 ]]; then
+  rosdep init 2>/dev/null || true
+elif [[ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]]; then
+  echo "WARN rosdep is not initialized. Run once with sudo: sudo rosdep init" >&2
+fi
 wget -q https://raw.githubusercontent.com/osrf/osrf-rosdep/master/gz/00-gazebo.list \
   -O /tmp/realman_ws_00-gazebo.list
 "${SUDO[@]}" install -m 0644 /tmp/realman_ws_00-gazebo.list \

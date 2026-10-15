@@ -17,10 +17,17 @@ pass_or_fail() {
   fi
 }
 
-controllers=$(timeout 10 ros2 control list_controllers 2>&1 || true)
+controllers=""
+for _ in {1..10}; do
+  controllers=$(timeout 5 ros2 control list_controllers 2>&1 | sed -E 's/\x1B\[[0-9;]*[mK]//g' || true)
+  # ros2controlcli colorizes the status token; count complete controller rows
+  # containing the active state instead of depending on terminal escapes.
+  active_count=$(grep -c 'active' <<<"$controllers" || true)
+  (( active_count >= 2 )) && break
+  sleep 1
+done
 pass_or_fail "RM65B arm controller listed" "rm65b_arm_controller" "$controllers"
 pass_or_fail "joint-state broadcaster listed" "joint_state_broadcaster" "$controllers"
-active_count=$(grep -c ' active$' <<<"$controllers" || true)
 if (( active_count >= 2 )); then echo "PASS controllers active"; else echo "FAIL controllers not active"; failed=1; fi
 
 actions=$(timeout 10 ros2 action list 2>&1 || true)

@@ -16,6 +16,7 @@ REQUIRED_PACKAGES = {
     "manipulation_bringup",
     "manipulation_moveit_adapter",
     "manipulation_demo",
+    "changingtek_gripper_driver",
 }
 FORBIDDEN_PATH_PARTS = {"manipulation_core", "franka_description", "moveit_resources"}
 
@@ -26,24 +27,35 @@ def fail(message: str) -> None:
 
 
 for package in sorted(REQUIRED_PACKAGES):
-    package_xml = ROOT / "src" / package / "package.xml"
-    if not package_xml.is_file():
+    package_roots = list((ROOT / "src").rglob("package.xml"))
+    package_xml = next((p for p in package_roots if f"<name>{package}</name>" in p.read_text(encoding="utf-8")), None)
+    if package_xml is None:
         fail(f"missing migrated package {package}")
     print(f"PASS migrated package {package}")
 
 for required in (
-    "src/robot_gazebo/urdf/rm65b_ctm2f110_gz.urdf.xacro",
-    "src/robot_gazebo/urdf/rm65b_gz.urdf.xacro",
-    "src/robot_gazebo/worlds/empty_mimic.sdf",
-    "src/manipulation_bringup/launch/realman_moveit_gz.launch.py",
+    "src/realman_rm65/robot_gazebo/urdf/rm65b_ctm2f110_gz.urdf.xacro",
+    "src/realman_rm65/robot_gazebo/urdf/rm65b_gz.urdf.xacro",
+    "src/realman_rm65/robot_gazebo/worlds/empty_mimic.sdf",
+    "src/ros2_adapters/manipulation_bringup/launch/realman_moveit_gz.launch.py",
 ):
     if not (ROOT / required).is_file():
         fail(f"missing required migrated runtime asset {required}")
 print("PASS RM65B gripper and bare-arm fallback runtime assets")
 
-link = ROOT / "src" / "rm_description"
+for required in (
+    "src/crt_ctm2f110_gripper_visualization/changingtek_gripper_driver/vendor/ctm2f110_sdk/gripper.cpp",
+    "src/crt_ctm2f110_gripper_visualization/changingtek_gripper_driver/vendor/ctm2f110_sdk/include/CRTS.h",
+    "src/crt_ctm2f110_gripper_visualization/changingtek_gripper_driver/vendor/ctm2f110_sdk/include/x86_64/libCRTServo.so",
+    "src/crt_ctm2f110_gripper_visualization/changingtek_gripper_driver/vendor/ctm2f110_sdk/include/arm64/libCRTServo.so",
+):
+    if not (ROOT / required).is_file():
+        fail(f"missing vendored CTM2F110 SDK asset {required}")
+print("PASS vendored CTM2F110 SDK assets for x86_64 and arm64")
+
+link = ROOT / "src" / "realman_rm65" / "rm_description"
 if not link.is_symlink():
-    fail("src/rm_description must remain a symlink to imported vendor source")
+    fail("src/realman_rm65/rm_description must remain a symlink to imported vendor source")
 print("PASS rm_description is a vendor-source symlink")
 
 manifest = (ROOT / "upstream" / "realman_humble.repos").read_text(encoding="utf-8")

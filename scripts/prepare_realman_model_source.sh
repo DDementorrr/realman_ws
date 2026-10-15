@@ -3,7 +3,7 @@ set -euo pipefail
 
 workspace_root="${REALMAN_WS_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 target="$workspace_root/upstream/realman_ros2/rm_description"
-link="$workspace_root/src/rm_description"
+link="$workspace_root/src/realman_rm65/rm_description"
 expected="$target"
 
 if [[ ! -d "$target" ]]; then
@@ -24,5 +24,5 @@ if [[ -e "$link" ]]; then
   exit 1
 fi
 
-ln -s ../upstream/realman_ros2/rm_description "$link"
+ln -s ../../upstream/realman_ros2/rm_description "$link"
 echo "PASS created $link -> $(readlink -f "$link")"

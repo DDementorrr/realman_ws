@@ -2,6 +2,7 @@
 """Read-only CTM2F110 simulation checks; never sends an actuator goal."""
 
 import argparse
+import re
 import subprocess
 import time
 
@@ -11,7 +12,7 @@ from sensor_msgs.msg import JointState
 
 def cli(*args):
     result = subprocess.run(args, capture_output=True, text=True, timeout=12, check=True)
-    return result.stdout
+    return re.sub(r"\x1b\[[0-9;]*[mK]", "", result.stdout)
 
 
 def main():
