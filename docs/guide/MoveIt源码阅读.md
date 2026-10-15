@@ -8,7 +8,7 @@
 
 ## 2. 当前打开的 launch 到底做什么
 
-[franka_moveit_gz.launch.py](../../manipulation_ws/src/manipulation_bringup/launch/franka_moveit_gz.launch.py)
+[franka_moveit_gz.launch.py](../../manipulation_ws/src/ros2_adapters/manipulation_bringup/launch/franka_moveit_gz.launch.py)
 选择机器人描述、SRDF、kinematics 和 controller 配置，再配置 OMPL pipeline。
 它负责组织组件和启动顺序；规划循环在 C++ 插件中执行。
 

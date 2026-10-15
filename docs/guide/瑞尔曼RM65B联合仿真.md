@@ -9,7 +9,7 @@
 厂家源码固定在 `manipulation_ws/upstream/realman_ros2`，当前提交见 `upstream.repos`。
 仓库说明面向 Ubuntu 22.04 与 ROS 2 Humble，因此没有直接启动厂家整仓；当前 Jazzy +
 Gazebo Harmonic 的 SRDF、控制器和启动编排由项目包维护。厂家仓库中的 `rm_description`
-保持原样，通过 `src/rm_description` 符号链接进入构建，只提供官方网格和 URDF 快照。
+保持原样，通过 `src/realman_rm65/rm_description` 符号链接进入构建，只提供官方网格和 URDF 快照。
 全新工作空间导入厂家源码后，运行 `/home/ww/scripts/prepare_realman_model_source.sh` 创建该入口；
 脚本遇到已有非预期路径时会拒绝覆盖。
 
@@ -77,11 +77,11 @@ ros2 topic pub --once /manipulation/rm65b/target_pose geometry_msgs/msg/PoseStam
 | 职责 | 位置 |
 |---|---|
 | 厂家模型、网格与惯量快照 | `upstream/realman_ros2/rm_description` |
-| RM65B SRDF、IK、限位和 MoveIt controller 映射 | `src/robot_realman_moveit_config` |
-| Harmonic ros2_control 与仿真 controller | `src/robot_gazebo/urdf/rm65b_gz.urdf.xacro`、`config/rm65b_controllers.yaml` |
-| 生命周期和组件组合 | `src/manipulation_bringup/launch/realman_moveit_gz.launch.py` |
-| 参数目标转 MoveGroup 请求 | `src/manipulation_moveit_adapter` |
-| 终端交互输入 | `src/manipulation_demo` |
+| RM65B SRDF、IK、限位和 MoveIt controller 映射 | `src/realman_rm65/robot_realman_moveit_config` |
+| Harmonic ros2_control 与仿真 controller | `src/realman_rm65/robot_gazebo/urdf/rm65b_gz.urdf.xacro`、`config/rm65b_controllers.yaml` |
+| 生命周期和组件组合 | `src/ros2_adapters/manipulation_bringup/launch/realman_moveit_gz.launch.py` |
+| 参数目标转 MoveGroup 请求 | `src/ros2_adapters/manipulation_moveit_adapter` |
+| 终端交互输入 | `src/ros2_adapters/manipulation_demo` |
 
 ## 6. 实机接入前的停止线
 
