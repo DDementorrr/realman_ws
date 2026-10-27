@@ -1,0 +1,82 @@
+# Template only. Supply rectified registered RGB/depth and an external robot model.
+# Model YAML: robot_urdf: /path/to/expanded.urdf
+#            required_links: [base_link, tool_link, camera_link]
+#            extra_boxes: []  # explicit sensor collision if absent from URDF
+# No sensor, simulator, controller, scene writer or automatic capture is started.
+depth_obstacles:
+  ros__parameters:
+    rgb_image_topic: /camera/camera/color/image_raw
+    depth_image_topic: /camera/camera/depth/image_rect_raw
+    camera_info_topic: /camera/camera/color/camera_info
+    depth_info_topic: /camera/camera/depth/camera_info
+    joint_states_topic: /joint_states
+    target_pose_topic: /object_pose
+    camera_frame: camera_color_optical_frame
+    output_frame: base_link
+    depth_encoding: 32FC1
+    # Optional reliable reception requires reliable sensor publishers.
+    # Default remains compatible with best-effort camera drivers.
+    sensor_reliability: best_effort
+    depth_scale: 1.0
+    # Enable only for a documented 32FC1 producer using REP-117 +Inf for
+    # no return beyond depth_max. NaN/-Inf/zero stay invalid in either mode.
+    far_no_return: false
+    max_time_skew: 0.15
+    max_input_age: 5.0
+    depth_min: 0.1
+    depth_max: 2.0
+    workspace_min: [0.31, -0.30, 0.26]
+    workspace_max: [0.73, 0.30, 0.65]
+    target_size: [0.05, 0.05, 0.22]
+    # Mask a visual marker protrusion/registration edge; unknown-space carving
+    # still uses the exact target geometry, without this extra padding.
+    target_mask_padding: 0.003
+    self_filter_model: /REPLACE/explicit-self-filter-model.yaml
+    # Optional point-only distance to supplied mesh triangles. Never clears
+    # unknown cells; must be covered by the explicit depth uncertainty budget.
+    self_surface_tolerance: 0.0
+    # Monitoring only; every blocking rectangle pixel needs an acquired finite
+    # robot-surface witness. Captured unknown collision geometry is unchanged.
+    monitor_robot_occlusion: false
+    # Optional separately known target surface; requires the surface monitor
+    # above and a fresh acquisition-time target pose. Never uses mask padding.
+    monitor_target_occlusion: false
+    voxel_size: 0.04
+    sample_stride: 2
+    cluster_distance: 0.04
+    min_obstacle_height: 0.015
+    min_cluster_points: 5
+    min_box_size: [0.003, 0.003, 0.003]
+    max_box_size: [0.5, 0.5, 0.5]
+    max_box_volume: 0.1
+    plane_threshold: 0.005
+    plane_min_points: 30
+    plane_iterations: 80
+    visibility_margin: 0.005
+    visibility_roundoff_m: 0.0  # optional numeric tolerance, maximum 1 micrometre
+    max_collision_boxes: 1024
+    # Optional known static support-plane contract. Stage-5 fixtures enable it
+    # explicitly; generic replay remains fail-closed when it is disabled.
+    support_surface_enabled: false
+    support_surface_height: 0.26
+    support_surface_normal: [0.0, 0.0, 1.0]
+    support_surface_xy_min: [0.31, -0.30]
+    support_surface_xy_max: [0.73, 0.30]
+    support_contact_height_tolerance: 0.003
+    support_uncertainty_budget_m: 0.035
+    # For monitored planning set true in an explicit copied config. One-shot
+    # stage4 replay keeps false. A lost/invalid stream never silently recovers.
+    monitor_inputs: false
+    min_valid_depth_fraction: 0.8
+    # During recent robot motion an external view may be self-occluded. The
+    # relaxed floor still rejects an all-invalid stream; joint motion is
+    # required and the lease remains bounded.
+    motion_min_valid_depth_fraction: 0.2
+    motion_joint_delta: 0.005
+    motion_hold_sec: 2.0
+    max_unknown_fraction: 0.8
+    sampling_bound_m: 0.006
+    # Optional: up to four absolute paths to complete additional view YAMLs.
+    # Every view is mandatory, shares the workspace/task/lease configuration,
+    # and supplies distinct camera frames and RGB/depth/info topics.
+    # additional_perception_configs: [/absolute/path/second-view.yaml]

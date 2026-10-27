@@ -7,6 +7,7 @@
   <joint name="world_to_rm65b" type="fixed">
     <parent link="world"/>
     <child link="base_link"/>
+    <origin xyz="0 0 0.15" rpy="0 0 0"/>
   </joint>
 
   <ros2_control name="RM65BGazeboSystem" type="system">

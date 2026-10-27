@@ -1,0 +1,35 @@
+# Simulation-owned generator config, metres in base_link. These are small
+# stage-2 fixtures, not the illustrative large dimensions in the proposal.
+obstacle_mode: fixed
+obstacle_seed: 42
+obstacle_count: 5
+obstacle_min_height: 0.08
+obstacle_max_height: 0.16
+obstacle_clearance: 0.04
+protected_margin: 0.12
+support_margin: 0.005
+robot_keepout_radius: 0.32
+max_attempts: 5000
+benchmark: single_wall
+footprints:
+  wall: [0.04, 0.30]
+  cube: [0.08, 0.08]
+  cuboid: [0.16, 0.05]
+  fence: [0.02, 0.18]
+# xyz uses support-relative bottom placement: [x, y, height].
+fixtures:
+  empty_baseline: []
+  semi_ring_table: []
+  single_wall:
+    - [wall, 0.66, 0.0, 0.12]
+  left_block:
+    - [cube, 0.65, 0.40, 0.12]
+  right_block:
+    - [cuboid, 0.60, -0.44, 0.12]
+  narrow_passage:
+    - [fence, 0.61, 0.0, 0.12]
+    - [fence, 0.70, 0.0, 0.12]
+  blocked_pick:
+    - [cube, 0.43, -0.18, 0.30]
+  blocked_place:
+    - [cube, 0.43, 0.18, 0.30]

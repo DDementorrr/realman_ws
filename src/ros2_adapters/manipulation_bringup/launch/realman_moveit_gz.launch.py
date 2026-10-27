@@ -107,6 +107,7 @@ def launch_setup(context):
     gazebo_xml = Command([
         FindExecutable(name="xacro"), " ", str(gazebo_xacro),
         *([" wrist_camera:=", LaunchConfiguration("wrist_camera")] if with_gripper else []),
+        *([" wrist_camera_sensor:=", LaunchConfiguration("wrist_camera_sensor")] if with_gripper else []),
         *([" pad_compliance:=", LaunchConfiguration("pad_compliance")] if with_gripper else []),
         *([" pick_place_attachment:=", LaunchConfiguration("pick_place_attachment")]
           if with_gripper else []),
@@ -178,7 +179,7 @@ def launch_setup(context):
     world_to_base = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
-        arguments=["--frame-id", "world", "--child-frame-id", "base_link"],
+        arguments=["--frame-id", "world", "--child-frame-id", "base_link", "--z", "0.15"],
         parameters=[{"use_sim_time": True}],
         output="screen",
     )
@@ -234,6 +235,9 @@ def launch_setup(context):
         parameters=[
             moveit_config.to_dict(),
             {"use_sim_time": True},
+            # Contact-mode Gazebo hand motion settles slower than its nominal
+            # trajectory duration; allow the controller time to report success.
+            {"trajectory_execution.allowed_execution_duration_scaling": 5.0},
             *([{"trajectory_execution.allowed_start_tolerance": 0.02}] if physical_grasp else []),
             *([{"capabilities": "move_group/ExecuteTaskSolutionCapability"}] if enable_mtc_execution else []),
         ],
@@ -283,6 +287,9 @@ def launch_setup(context):
                 value for value in [
                     str(description_share.parent),
                     str(gripper_share.parent) if gripper_share else "",
+                    # World-local visual assets (for example the ArUco marker
+                    # textures) are referenced by filename from SDF files.
+                    str(gazebo_share.parent),
                     os.environ.get("GZ_SIM_RESOURCE_PATH", ""),
                 ] if value
             ),
@@ -335,7 +342,8 @@ def generate_launch_description():
             DeclareLaunchArgument("with_gripper", default_value="false"),
             DeclareLaunchArgument("pick_place_attachment", default_value="false"),
             DeclareLaunchArgument("physical_grasp", default_value="false"),
-            DeclareLaunchArgument("wrist_camera", default_value="false"),
+            DeclareLaunchArgument("wrist_camera", default_value="true"),
+            DeclareLaunchArgument("wrist_camera_sensor", default_value="true"),
             DeclareLaunchArgument("pad_compliance", default_value="false"),
             DeclareLaunchArgument("enable_mtc_execution", default_value="false"),
             DeclareLaunchArgument("world_file", default_value=""),

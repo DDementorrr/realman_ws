@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+workspace_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export PYTHONPATH="$workspace_root/src/ros2_adapters/pick_place_runtime:$workspace_root/src/ros2_adapters/pick_place_sim/scripts:${PYTHONPATH:-}"
+exec /usr/bin/python3 "$workspace_root/scripts/test_ros_action_backend.py" -v

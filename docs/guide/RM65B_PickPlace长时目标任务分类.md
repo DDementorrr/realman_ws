@@ -25,7 +25,7 @@
 | 阶段 | 任务类别 | 启动入口 | 进入条件 | 通过门槛 |
 |---|---|---|---|---|
 | 1 | 已知位姿基础场景 | `pick_place_demo known_scene.launch.py` | RM65B、夹爪和现有 MoveIt 配置可启动 | 工作台、物体、放置区存在；已知 `/object_pose` 和 `/place_pose` 可被规划节点读取 |
-| 2 | MTC 抓取放置规划 | `pick_place_mtc plan_pick_place.launch.py` | 阶段 1 场景可复现 | 生成 Home → Pre-Grasp → Approach → Close → Attach → Lift → Transport → Place → Open → Detach → Retreat 任务；自由空间使用 OMPL，笛卡尔段使用 CartesianPath，若部署了 Pilz 则可替换为 LIN |
+| 2 | MTC 抓取放置规划 | `pick_place_mtc plan_pick_place.launch.py`（外部配置）或 `pick_place_sim execute_pick_place.launch.py`（仿真编排） | 外部模型、任务配置、输入位姿和 PlanningScene 已就绪 | 公共入口仅规划且不启动场景；仿真入口组合 known_scene、Gazebo 和规划器 |
 | 3 | 固定附着状态管理 | `pick_place_sim execute_pick_place.launch.py` | 阶段 2 规划成功 | Gazebo 固定/可拆附着与 PlanningScene attach/detach 同步；执行后可 reset 并重复执行 |
 | 4 | 真实接触抓取 | `pick_place_sim physical_pick_place.launch.py` | 阶段 3 接口和复位稳定 | 不依赖强制固定附着；搬运时由夹爪碰撞、摩擦、质量和接触维持物体；连续独立循环结果一致 |
 | 5 | RGB-D 仿真感知输入 | `pick_place_sim rgbd_pick_place.launch.py` | 阶段 4 物理场景可启动 | Gazebo Harmonic 原生 RGB、Depth、CameraInfo 和 PointCloud2 输出，并提供接近 RealSense 的重映射 |

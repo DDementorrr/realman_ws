@@ -1,0 +1,12 @@
+# Static external simulation fixture, independently known target pose.
+# Optical extrinsics are published from these SAME spawn poses. Not calibration
+# or hardware placement approval. No arm observation motion is commanded.
+# Outer placement avoids the old near-clip crossing during the tested task.
+# Motion validation also requires explicit known-surface monitoring and a fresh
+# independently supplied moving target pose; this file alone is not approval.
+cameras:
+  - {name: stage4, x: 0.55, y: 0.0, z: 1.20, roll: 0.0, pitch: 1.5707963267948966, yaw: 0.0}
+  - {name: xleft, x: -0.95, y: -0.18, z: 0.52, roll: 0.0, pitch: 0.0, yaw: 0.0}
+  - {name: xright, x: 1.10, y: -0.18, z: 0.52, roll: 0.0, pitch: 0.0, yaw: 3.141592653589793}
+  - {name: yfront, x: 0.43, y: -1.00, z: 0.52, roll: 0.0, pitch: 0.0, yaw: 1.5707963267948966}
+  - {name: yback, x: 0.43, y: 1.00, z: 0.52, roll: 0.0, pitch: 0.0, yaw: -1.5707963267948966}

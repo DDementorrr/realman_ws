@@ -1,5 +1,6 @@
 """Stage 4: execute the same MTC task using contact alone, without a fixed joint."""
 
+import os
 from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
@@ -13,7 +14,7 @@ from launch_ros.actions import Node
 def generate_launch_description():
     planner = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            str(Path(get_package_share_directory("pick_place_mtc")) / "launch" / "plan_pick_place.launch.py")
+            str(Path(get_package_share_directory("pick_place_sim")) / "launch" / "plan_pick_place_sim.launch.py")
         ),
         launch_arguments={
             "headless": LaunchConfiguration("headless"),
@@ -30,7 +31,9 @@ def generate_launch_description():
             "grasp_lateral_offset": "-0.003",
             "grip_target": LaunchConfiguration("grip_target"),
             "open_target": "1.0",
-            "gripper_motion_scaling": "0.15",
+            # The Gazebo hand controller reaches the contact target in the
+            # planned execution window at full joint-limit scaling.
+            "gripper_motion_scaling": "1.0",
             "motion_velocity_scaling": "1.0",
             "motion_acceleration_scaling": "1.0",
             # Reduce inertial load on the contact-only grasp during the
@@ -48,9 +51,12 @@ def generate_launch_description():
         DeclareLaunchArgument("headless", default_value="false"),
         DeclareLaunchArgument("use_rviz", default_value="true"),
         DeclareLaunchArgument("auto_execute", default_value="false"),
+        DeclareLaunchArgument(
+            "execution_fault_latch_file",
+            default_value=os.path.expanduser("~/.ros/pick_place_execution_fault.json")),
         DeclareLaunchArgument("pick_place_attachment", default_value="false"),
         DeclareLaunchArgument("physical_grasp", default_value="true"),
-        DeclareLaunchArgument("wrist_camera", default_value="false"),
+        DeclareLaunchArgument("wrist_camera", default_value="true"),
         DeclareLaunchArgument("pad_compliance", default_value="false"),
         DeclareLaunchArgument("transport_velocity_scaling", default_value="0.15"),
         DeclareLaunchArgument("transport_acceleration_scaling", default_value="0.10"),
@@ -71,5 +77,7 @@ def generate_launch_description():
              parameters=[{"use_sim_time": True}], output="screen"),
         Node(package="pick_place_sim", executable="execute_pick_place.py",
              parameters=[{"use_sim_time": True, "auto_execute": LaunchConfiguration("auto_execute"),
+                          "execution_fault_latch_file":
+                              LaunchConfiguration("execution_fault_latch_file"),
                           "physical_contact": LaunchConfiguration("physical_contact")}], output="screen"),
     ])

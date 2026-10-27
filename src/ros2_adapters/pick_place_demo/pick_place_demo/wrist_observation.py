@@ -19,7 +19,7 @@ from std_msgs.msg import Bool
 def main():
     rclpy.init()
     node = Node('wrist_observation')
-    node.declare_parameter('observation_xyz', [0.36, -0.18, 0.67])
+    node.declare_parameter('observation_xyz', [0.18, -0.075, 0.40])
     # Ry(pi/2) * Rz(pi/2): optical Z faces base +X while the open
     # fingers rotate out of the top marker's viewing direction.
     node.declare_parameter('observation_quaternion', [0.5, 0.5, 0.5, 0.5])

@@ -9,4 +9,5 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .ros/
+.local_ros_*/
 *.deb

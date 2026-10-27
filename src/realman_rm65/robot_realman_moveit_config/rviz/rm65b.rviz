@@ -1,4 +1,6 @@
 Panels:
+  - Class: rm65b_operator_panel/OperatorPanel
+    Name: RM65B Operator
   - Class: rviz_common/Displays
     Help Height: 70
     Name: Displays
@@ -285,24 +287,6 @@ Visualization Manager:
         Show Robot Visual: true
       Value: true
       Velocity_Scaling_Factor: 0.1
-    - Class: rviz_default_plugins/Camera
-      Enabled: true
-      Far Plane Distance: 100
-      Image Rendering: background and overlay
-      Name: Camera
-      Overlay Alpha: 0.5
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /camera/camera/depth/image_rect_raw
-      Value: true
-      Visibility:
-        Grid: true
-        MotionPlanning: true
-        Value: true
-      Zoom Factor: 1
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -342,11 +326,9 @@ Visualization Manager:
       Yaw: 5.58318567276001
     Saved: ~
 Window Geometry:
-  Camera:
-    collapsed: false
   Displays:
     collapsed: false
-  Height: 945
+  Height: 1000
   Help:
     collapsed: false
   Hide Left Dock: false
@@ -355,9 +337,8 @@ Window Geometry:
     collapsed: false
   MotionPlanning - Trajectory Slider:
     collapsed: false
-  QMainWindow State: 000000ff00000000fd0000000100000000000001c90000035bfc0200000006fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000003f00fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e0067010000003b000001740000016900fffffffb000000100044006900730070006c00610079007301000001b5000000c7000000c700fffffffb0000000800480065006c0070000000030d000000890000006e00fffffffb0000000a0056006900650077007300000002f6000000a0000000a000fffffffb0000000c00430061006d0065007200610100000282000001140000002800ffffff000002e10000035b00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Views:
     collapsed: false
-  Width: 1200
-  X: 2544
-  Y: -33
+  Width: 1800
+  X: 50
+  Y: 50

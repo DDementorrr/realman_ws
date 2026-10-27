@@ -1,0 +1,17 @@
+# Backend-independent RGB-D contract. Lengths and offsets are metres.
+/**:
+  ros__parameters:
+    marker_id: 0
+    marker_size: 0.045
+    marker_center_offset: [0.0, 0.0, 0.0]
+    object_size: [0.05, 0.07, 0.22]
+    object_id: pick_object
+    camera_frame: camera_color_optical_frame
+    output_frame: base_link
+    rgb_image_topic: /camera/camera/color/image_raw
+    depth_image_topic: /camera/camera/depth/image_rect_raw
+    camera_info_topic: /camera/camera/color/camera_info
+    depth_encoding: 32FC1
+    depth_scale: 1.0
+    max_time_skew: 0.1
+    # use_sim_time is selected by the outer launch/configuration.

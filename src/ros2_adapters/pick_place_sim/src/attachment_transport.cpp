@@ -27,6 +27,7 @@ class AttachmentTransport : public rclcpp::Node
 public:
   AttachmentTransport() : rclcpp::Node("pick_place_attachment_transport")
   {
+    declare_parameter("world_base_z", 0.15);
     state_pub_ = create_publisher<std_msgs::msg::String>(
       "/pick_place/sim/attachment_state", rclcpp::QoS(1).reliable().transient_local());
     pose_pub_ = create_publisher<geometry_msgs::msg::PoseStamped>(
@@ -74,11 +75,15 @@ public:
             response->message = "Cannot reset a Gazebo object while attached";
             return;
           }
-          if (!have_pick_pose_ || pick_pose_.header.frame_id != "world") {
-            response->message = "No world-frame known pick pose available";
+          if (!have_pick_pose_ ||
+              (pick_pose_.header.frame_id != "world" && pick_pose_.header.frame_id != "base_link")) {
+            response->message = "No world- or base_link-frame known pick pose available";
             return;
           }
           pick_pose = pick_pose_.pose;
+          if (pick_pose_.header.frame_id == "base_link") {
+            pick_pose.position.z += get_parameter("world_base_z").as_double();
+          }
         }
         gz::msgs::Pose request;
         request.set_name("pick_object");
@@ -169,7 +174,15 @@ private:
       }
       geometry_msgs::msg::PoseStamped ros_message;
       ros_message.header.frame_id = "world";
-      ros_message.header.stamp = now();
+      // Preserve the acquisition time of the Gazebo pose batch. Callback
+      // receipt time cannot be used to pair a moving target with RGB-D.
+      if (!message.has_header() || !message.header().has_stamp() ||
+          message.header().stamp().sec() < 0 || message.header().stamp().nsec() < 0 ||
+          message.header().stamp().nsec() >= 1000000000) {
+        continue;
+      }
+      ros_message.header.stamp.sec = message.header().stamp().sec();
+      ros_message.header.stamp.nanosec = message.header().stamp().nsec();
       ros_message.pose.position.x = pose.position().x();
       ros_message.pose.position.y = pose.position().y();
       ros_message.pose.position.z = pose.position().z();
@@ -207,6 +220,12 @@ private:
         response.message = "Gazebo robot model entity is not yet available";
         return;
       }
+      {
+        std::lock_guard<std::mutex> lock(mutex_);
+        // The plugin attaches on its first update. Its one-shot state may
+        // precede transport discovery; the pre-load detached state is stale.
+        state_ = "unknown";
+      }
       gz::msgs::EntityPlugin_V request;
       request.mutable_entity()->set_id(robot_entity_.load());
       request.mutable_entity()->set_name("rm65b");
@@ -230,6 +249,26 @@ private:
       }
       plugin_loaded_ = true;
       RCLCPP_INFO(get_logger(), "Loaded Gazebo DetachableJoint at grasp time");
+      std::unique_lock<std::mutex> lock(mutex_);
+      if (!cv_.wait_for(lock, 500ms, [this] { return state_ == "attached"; })) {
+        RCLCPP_WARN(get_logger(), "Initial attachment acknowledgement missing; requiring a fresh detached handshake");
+        state_ = "unknown";
+        bool confirmed = false;
+        // At this stationary first-grasp boundary only, establish an actual
+        // detached acknowledgement before requesting attachment again. Never
+        // infer success from system/add or the initial local state. This is
+        // not recovery of an already failed task or an unconfirmed motion.
+        for (int attempt = 0; attempt < 2 && !confirmed; ++attempt) {
+          lock.unlock();
+          detach_pub_.Publish(gz::msgs::Empty());
+          lock.lock();
+          confirmed = cv_.wait_for(lock, 500ms, [this] { return state_ == "detached"; });
+        }
+        if (!confirmed) {
+          response.message = "Gazebo initial detached handshake was not confirmed";
+          return;
+        }
+      }
     }
     for (int attempt = 0; attempt < 8; ++attempt) {
       gz::msgs::Empty message;

@@ -1,0 +1,4 @@
+# Backward-compatible single grasp source; all emitted solutions are audited.
+plan_pick_place:
+  ros__parameters:
+    candidate_profiles: [baseline]

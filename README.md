@@ -1,230 +1,234 @@
-# RM65B + CTM2F110 ROS 2 Humble 迁移工作空间
+# RM65B 仿真操作与接口速查
 
-这个仓库保存从主工作空间迁移到 Ubuntu 22.04 / ROS 2 Humble 的最小工程集合：
+Ubuntu 22.04 · ROS 2 Humble · Gazebo Harmonic。流程解释、场景差异、验收边界见 [最新工作流说明](docs/guide/RM65B仿真工作流与接口说明.md)；[指南索引](docs/guide/索引.md)。以下运动指令只用于仿真。
 
-- 瑞尔曼 RM65B 的项目 MoveIt 2 配置；
-- 从 ROS 1 资产适配而来的 CTM2F110 夹爪描述包；
-- Gazebo Harmonic 控制模型、联动关节 world 和启动编排；
-- MoveIt 目标位姿适配器、交互目标发布器以及运行时检查脚本。
+## 1. 环境与构建
 
-厂商 RM65B 描述、ROS 2 接口和驱动不复制到本仓库，而是由
-[`upstream/realman_humble.repos`](upstream/realman_humble.repos) 固定来源和提交后再导入。
-MoveIt、OMPL、RViz 和 Gazebo 采用 Ubuntu/ROS 官方二进制包。这样仓库只承担项目自建
-适配层，不伪装成瑞尔曼官方驱动，也不包含可直接控制实机的硬件接口。
+每个终端都先执行；同一轮使用相同 `ROS_DOMAIN_ID`、`GZ_PARTITION`。
 
-## 目标环境
+```bash
+cd ~/realman_ws
+source scripts/source_pick_place_env.sh
+# 仅增量安装自定义 RViz 面板，不修改 RViz/MoveIt 源码：
+bash scripts/build_operator_panel.sh
+source scripts/source_pick_place_env.sh
+```
 
-目标组合是 Ubuntu 22.04、ROS 2 Humble、Gazebo Harmonic、MoveIt 2 和 `ros2_control`。
-Humble + Harmonic 是一个需要显式安装 Gazebo 非默认二进制包、并从源码构建
-`gz_ros2_control` 的组合；不要把 Fortress 的 `ros-humble-gz-ros2-control` 二进制
-误当成 Harmonic 插件。
-
-## 快速复现
+新机器首次安装：
 
 ```bash
 cd ~/realman_ws
 bash scripts/setup_ubuntu2204_ros2_humble.sh
 bash scripts/import_upstream.sh
 bash scripts/prepare_realman_model_source.sh
-# 可选：用另一个已验证的完整提交替换默认锁定值
-# export GZ_ROS2_CONTROL_COMMIT=<经过验证的40位提交>
 bash scripts/build_gz_ros2_control_harmonic.sh
 rosdep install --from-paths src --ignore-src -r -y \
   --skip-keys="ros_gz ros_gz_bridge ros_gz_sim gz_ros2_control"
-colcon build --symlink-install
-source install/setup.bash
-ros2 launch manipulation_bringup realman_moveit_gz.launch.py \
-  with_gripper:=true
-```
-
-没有图形服务器时使用 `headless:=true use_rviz:=false`。仿真运行后，另开终端执行：
-
-```bash
-source /opt/ros/humble/setup.bash
-source ~/realman_ws/install/setup.bash
-bash scripts/verify_realman_gz_runtime.sh
-python3 scripts/verify_realman_gripper_gz_runtime.py
-```
-
-## Pick & Place：阶段 1（已知位姿场景）
-
-沿用上述 RM65B、夹爪、控制器和 MoveIt 启动链路，只替换 Gazebo world，
-并向 MoveIt PlanningScene 加入工作台与长方体。物体高 0.22 m，方便夹爪在
-远离台面的高度接触物体；放置区域是工作台上的绿色标记，
-`/object_pose` 和 `/place_pose` 是 `world` 坐标系下的已知位姿。
-
-```bash
+sudo apt install fonts-noto-cjk ros-humble-moveit-task-constructor-core \
+  ros-humble-moveit-task-constructor-capabilities ros-humble-moveit-task-constructor-visualization
 source /opt/ros/humble/setup.bash
 source .third_party/gz_ros2_control/install/setup.bash
+colcon build --symlink-install
 source install/setup.bash
-ros2 launch pick_place_demo known_scene.launch.py with_gripper:=true
+python3 scripts/verify_migration_manifest.py
+bash scripts/verify_environment.sh
 ```
 
-无图形服务器加 `headless:=true use_rviz:=false`。保持仿真运行，在第二终端执行：
+## 2. 启动场景（一次只选一个）
 
 ```bash
-source /opt/ros/humble/setup.bash
-source install/setup.bash
+# 基础机械臂+夹爪，无抓放任务：
+ros2 launch manipulation_bringup realman_moveit_gz.launch.py with_gripper:=true
+# 桌面与已知物体，适合面板、拖动、终端 A→B：
+ros2 launch pick_place_demo known_scene.launch.py with_gripper:=true
+# 固定附着完整抓放；默认不执行，等待独立任务接口：
+ros2 launch pick_place_sim execute_pick_place.launch.py auto_execute:=false
+# 纯接触抓取试验；接触验收仍见指南：
+ros2 launch pick_place_sim physical_pick_place.launch.py auto_execute:=false
+# RGB-D 传感器试验：
+ros2 launch pick_place_sim rgbd_pick_place.launch.py auto_execute:=false
+# 腕部 ArUco 视觉定位；观察动作仍会自动运行，抓放手动触发：
+ros2 launch pick_place_sim vision_pick_place.launch.py auto_execute:=false
+# U 形工作台：
+ros2 launch pick_place_sim workbench_pick_place.launch.py auto_execute:=false
+# 固定薄墙 / 随机障碍 / 静态 Gazebo 真值（任选一条）：
+ros2 launch pick_place_sim obstacle_pick_place.launch.py benchmark:=single_wall auto_execute:=false
+ros2 launch pick_place_sim obstacle_pick_place.launch.py obstacle_mode:=random obstacle_seed:=42 auto_execute:=false
+ros2 launch pick_place_sim obstacle_pick_place.launch.py obstacle_source:=gazebo_truth auto_execute:=false
+```
+
+无图形环境在所选 launch 后加 `headless:=true use_rviz:=false`。外部五路 RGB-D、多候选阶段 6 的完整生成配置与启动命令在[指南](docs/guide/RM65B仿真工作流与接口说明.md#扩展方案阶段-6rgb-d-多候选固定附着任务)。
+
+## 3. 发布目标与执行
+
+RViz：`Panels → Add New Panel → rm65b_operator_panel/OperatorPanel`（默认配置自动加载）。拖动原生目标球，或修改面板 TCP/关节并点击应用；先原生 **Plan**，再原生 **Execute**。面板中的 Pick & Place 按钮走独立任务服务。面板限速只约束此 RViz 的原生规划，其他节点的限速须分别配置。
+
+```bash
+# 新接口：只更新 RViz 目标、进行 IK，不发起运动。需 RViz 面板运行。
+# 最稳妥的起点：把当前位姿复制为目标，随后在面板小幅修改。
+python3 scripts/publish_current_panel_goal.py
+# 手工发布时替换为实际可达的 base_link 位姿（m、单位四元数）：
+# ros2 topic pub --once /manipulation/rm65b/set_goal_pose geometry_msgs/msg/PoseStamped \
+#   '{header: {frame_id: base_link}, pose: {position: {x: X, y: Y, z: Z}, orientation: {x: QX, y: QY, z: QZ, w: QW}}}'
+
+# 旧接口：收到目标立即规划并执行！只在仿真独立测试时使用。
+ros2 run manipulation_demo interactive_target --ros-args -p use_sim_time:=true
+# 输入 x y z roll pitch yaw，单位 m/rad。其发布到 /manipulation/rm65b/target_pose。
+
+# 完整抓放的独立入口；先看 plan_ready，再明确执行：
+ros2 topic echo /pick_place/plan_ready --once --qos-durability transient_local
+ros2 service call /pick_place/execute std_srvs/srv/Trigger '{}'
+ros2 service call /pick_place/cancel std_srvs/srv/Trigger '{}'
+# 仅支持 reset 的仿真入口，重置不会使旧候选重新有效：
+ros2 service call /pick_place/reset std_srvs/srv/Trigger '{}'
+```
+
+## 4. 总览、类型、发布者与连接
+
+```bash
+ros2 node list
+ros2 node info /move_group
+ros2 node info /rm65b_operator_panel
+ros2 topic list -t
+ros2 service list -t
+ros2 action list -t
+ros2 control list_controllers
+ros2 control list_hardware_interfaces
+# 下列 TOPIC 替换为任意话题，查看真实类型、发布者、订阅者和 QoS：
+ros2 topic info -v /joint_states
+ros2 interface show geometry_msgs/msg/PoseStamped
+rqt_graph
+```
+
+## 5. RGB-D、识别与 TF
+
+```bash
+# 图像内容：
+ros2 run rqt_image_view rqt_image_view /camera/camera/color/image_raw
+ros2 run rqt_image_view rqt_image_view /camera/camera/depth/image_rect_raw
+# 图像头/帧率；避免把整幅像素数组刷进终端：
+ros2 topic echo /camera/camera/color/image_raw --once --field header --qos-reliability best_effort
+ros2 topic hz /camera/camera/color/image_raw
+ros2 topic hz /camera/camera/depth/image_rect_raw
+ros2 topic echo /camera/camera/color/camera_info --once --qos-reliability best_effort
+ros2 topic echo /camera/camera/depth/camera_info --once --qos-reliability best_effort
+ros2 topic echo /camera/camera/depth/color/points --once --field header --qos-reliability best_effort
+# 物体/放置输入；已知场景输入不是视觉识别结果：
+ros2 topic echo /object_pose --once --qos-durability transient_local
+ros2 topic echo /place_pose --once --qos-durability transient_local
+ros2 run tf2_ros tf2_echo base_link camera_color_optical_frame
+ros2 run tf2_ros tf2_echo base_link ctm2f110_tool0
+# 裸臂把 ctm2f110_tool0 改成 Link6。
+# 外部多相机场景，把 /camera 换成 /stage4、/xleft、/xright、/yfront、/yback：
+ros2 topic info -v /xleft/camera/depth/image_rect_raw
+```
+
+## 6. 末端输入、IK 输出与实际关节
+
+```bash
+# 新面板输入（先于 IK）和已接受的目标（经 IK 或关节编辑）：
+ros2 topic echo /manipulation/rm65b/set_goal_pose
+ros2 topic echo /manipulation/rm65b/ik_target_pose --qos-durability transient_local
+ros2 topic echo /manipulation/rm65b/goal_pose --qos-durability transient_local
+ros2 topic echo /manipulation/rm65b/goal_joints --qos-durability transient_local
+# 当前 FK、物体坐标、限速与失败原因（需面板运行）：
+ros2 topic echo /manipulation/rm65b/current_pose --once --qos-durability transient_local
+ros2 topic echo /manipulation/rm65b/object_in_base --once --qos-durability transient_local
+ros2 topic echo /manipulation/rm65b/object_in_tcp --once --qos-durability transient_local
+ros2 topic echo /manipulation/rm65b/planning_limits --once --qos-durability transient_local
+ros2 topic echo /manipulation/rm65b/panel_status --qos-durability transient_local
+# 实际反馈来自 Gazebo 控制器，不是 IK 目标：
+ros2 topic echo /joint_states --once --qos-reliability best_effort
+ros2 topic echo /rm65b_arm_controller/controller_state --once
+ros2 topic echo /ctm2f110_hand_controller/controller_state --once
+# 旧终端目标：
+ros2 topic echo /manipulation/rm65b/target_pose
+# 独立 IK/FK 服务定义及实际端点；服务响应不会自动另发成关节命令：
+ros2 service type /compute_ik
+ros2 interface show moveit_msgs/srv/GetPositionIK
+ros2 service type /compute_fk
+ros2 interface show moveit_msgs/srv/GetPositionFK
+```
+
+`ik_target_pose` 是尝试值；IK 失败时 `goal_pose/goal_joints` 保留上次接受值，不能将它误认为本次 IK 成功。拖动输入也在 MoveIt 的交互标记反馈中；用下面命令找出其当前实际名称：
+
+```bash
+ros2 topic list -t | rg 'feedback|interactive_marker'
+# ros2 topic echo <上面列出的 /.../feedback> --field pose
+```
+
+## 7. 规划器输入输出、轨迹与执行
+
+```bash
+# 原生 OMPL 请求（MoveGroup 调试发布；实际端点用 topic list 核对）：
+ros2 topic echo /motion_plan_request
+# 路径与时间参数化后的关节轨迹：
+ros2 topic echo /display_planned_path --once
+ros2 topic echo /display_planned_path --once --field trajectory
+# MoveGroup 与轨迹执行状态；action 的 goal/result 走服务，不是普通 goal 话题：
+ros2 action info /move_action
+ros2 action info /execute_trajectory
+ros2 topic echo /move_action/_action/status
+ros2 topic echo /execute_trajectory/_action/status
+# 控制器实际接收的轨迹 action 与期望/实际/误差：
+ros2 action info /rm65b_arm_controller/follow_joint_trajectory
+ros2 action info /ctm2f110_hand_controller/follow_joint_trajectory
+ros2 topic echo /rm65b_arm_controller/controller_state --field desired
+ros2 topic echo /rm65b_arm_controller/controller_state --field actual
+ros2 topic echo /rm65b_arm_controller/controller_state --field error
+# MTC 输入 /object_pose、/place_pose、场景和当前关节；输出：
+ros2 topic echo /pick_place/task_description --once --qos-durability transient_local
+ros2 topic echo /pick_place/solution --once --qos-durability transient_local
+ros2 topic echo /pick_place/planning_metrics --once --qos-durability transient_local
+ros2 topic echo /pick_place/plan_ready --once --qos-durability transient_local
+ros2 topic echo /pick_place/execution_status --qos-durability transient_local
+ros2 topic echo /pick_place/execution_success --qos-durability transient_local
+ros2 action info /execute_task_solution
+```
+
+若 `/motion_plan_request` 在所用 MoveIt 构建中未启用，不能靠 echo 读取 action 请求内容；核对 `/move_action` 的接口定义与 launch 日志。MTC Cartesian 段不会各自经过 OMPL，该段轨迹在 `/pick_place/solution` 中。
+
+## 8. 场景、障碍、附着与夹爪
+
+```bash
+ros2 topic echo /monitored_planning_scene --once
+# 获取完整场景，而不是只看到增量 diff：
+ros2 service call /get_planning_scene moveit_msgs/srv/GetPlanningScene '{components: {components: 1023}}'
+ros2 topic echo /perception/collision_objects --once --qos-durability transient_local
+ros2 topic echo /perception/scene_ready --once --qos-durability transient_local
+ros2 topic echo /perception/scene_revision --once --qos-durability transient_local
+ros2 topic echo /perception/obstacle_status --qos-durability transient_local
+ros2 topic echo /perception/obstacles_ready --qos-durability transient_local
+# 只在对应 RGB-D / 真值刷新入口使用：
+ros2 service call /perception/capture_obstacles std_srvs/srv/Trigger '{}'
+ros2 service call /obstacles/refresh_truth std_srvs/srv/Trigger '{}'
+# 仿真执行证据；仅对应入口才存在：
+ros2 topic echo /pick_place/sim/object_pose
+ros2 topic echo /pick_place/sim/attachment_state
+ros2 topic echo /pick_place/sim/contact_state
+ros2 topic echo /ctm2f110_hand_controller/controller_state --once
+ros2 param dump /ctm2f110_hand_controller
+ros2 param get /robot_state_publisher robot_description
+```
+
+**抓取力：当前仿真是 position 控制，没有可读写的“抓取力 N”接口。** `grip_target` 是夹爪关节位置，`contact_state` 是接触状态；`JointState.effort`（若存在）也不能直接当成指尖夹持力。厂商 SDK 适配器当前同样只接线位置/回读；实机力控制需另行实现和标定。
+
+## 9. 验证与迁移
+
+```bash
 bash scripts/verify_realman_gz_runtime.sh
 python3 scripts/verify_realman_gripper_gz_runtime.py
-python3 scripts/verify_pick_place_scene.py
-python3 scripts/check_pick_place_ik.py
+python3 scripts/verify_pick_place_scene.py        # 旧单桌
+python3 scripts/verify_mtc_stage2.py             # 完整规划
+python3 scripts/verify_pick_place_stage3.py      # 固定附着完整抓放
+python3 scripts/verify_pick_place_stage4.py      # 纯接触，须执行前启动
+python3 scripts/verify_pick_place_stage5.py --wrist-camera
+python3 scripts/verify_pick_place_stage6.py      # 视觉定位/场景门槛
+python3 scripts/verify_stage1_workbench.py        # U 台
+# 在单桌 known_scene 仿真运行且没有其他 RViz 操作时，探针会小幅执行 joint1：
+bash scripts/test_operator_panel.sh
+python3 scripts/verify_migration_manifest.py
+bash scripts/verify_environment.sh
 ```
 
-检查脚本同时读取 Gazebo 模型位姿、MoveIt 碰撞几何和 ROS 2 已知位姿；
-IK 预检要求抓取姿态除夹爪与目标物体接触外不与台面相交，并要求放置姿态无碰撞。
-单看 RViz 中的物体或机械臂不算通过。当前这一步只验证场景与原控制链路，
-不会自动发起抓取或移动物体。场景尺寸与位姿在
-`src/ros2_adapters/pick_place_demo/config/known_scene.yaml` 中配置；修改后需同步
-`src/realman_rm65/robot_gazebo/worlds/rm65b_pick_place.sdf` 并重新运行检查。
-
-## Pick & Place：阶段 2（MTC 任务规划，已运行验收）
-
-网络可用时安装 Humble 的上游 MTC 包，再以严格依赖检查构建：
-
-```bash
-sudo apt install ros-humble-moveit-task-constructor-core \
-  ros-humble-moveit-task-constructor-capabilities \
-  ros-humble-moveit-task-constructor-visualization
-source /opt/ros/humble/setup.bash
-colcon build --packages-select pick_place_mtc --cmake-args -DPICK_PLACE_REQUIRE_MTC=ON
-source install/setup.bash
-ros2 pkg executables pick_place_mtc  # 应包含 plan_pick_place
-```
-
-下面的独立启动文件会复用阶段 1 的完整仿真启动：
-
-```bash
-source /opt/ros/humble/setup.bash
-source install/setup.bash
-ros2 launch pick_place_mtc plan_pick_place.launch.py
-```
-
-无图形服务器加 `headless:=true use_rviz:=false`。
-
-节点等待 `/object_pose`、`/place_pose` 和 MoveIt 碰撞场景就绪，复用现有
-`ready`、`open` 状态，并为本场景设置夹爪闭合目标，生成 Home、预抓取、接近、闭合、附着、抬升、
-搬运、下降放置、打开、分离、撤退、返回 Home 的完整 MTC 方案。自由空间段使用
-OMPL，接近、抬升、放置和撤退使用 MTC CartesianPath。阶段 2 只发布规划解，
-不执行；完整规划已在运行中的 Gazebo + MoveIt 上验收通过。2026-09-24 的本地
-严格编译使用忽略目录 `.third_party/mtc/debroot` 中的 Humble MTC 二进制包，
-并不等同于系统安装。
-
-规划节点正常输出 `/pick_place/plan_ready=true` 后，在第二终端运行
-`python3 scripts/verify_mtc_stage2.py`。该检查还确认物体仍在 MoveIt 的 world 中，
-防止把仅完成规划误判为 Gazebo 抓取执行。
-
-## Pick & Place：阶段 3（固定关节仿真抓取）
-
-独立启动阶段 3；该入口才启用 Gazebo 抓取锚点及 MTC 执行能力，阶段 1、2
-的启动入口保持规划或场景验证模式。若 MTC 安装在本地忽略目录而非系统目录，
-启动和验证终端都必须加载同一环境，推荐直接 source 仓库脚本：
-
-```bash
-source scripts/source_pick_place_env.sh
-```
-
-```bash
-ros2 launch pick_place_sim execute_pick_place.launch.py headless:=true use_rviz:=false auto_execute:=true
-```
-
-第二终端运行 `python3 scripts/verify_pick_place_stage3.py`，检查完整动作成功、
-Gazebo 固定关节已释放、Gazebo 实际物体位姿接近放置目标，以及 MoveIt
-PlanningScene 中物体回到 world。`auto_execute:=false` 可在规划完成后手动调用
-`ros2 service call /pick_place/execute std_srvs/srv/Trigger '{}'`。一轮完成后可调用
-`ros2 service call /pick_place/reset std_srvs/srv/Trigger '{}'`，再调用执行服务；
-同一仿真进程内的第二轮已通过上述验收脚本。这一阶段使用独立的
-`rm65b_pick_place_fixed.sdf`：零重力且目标物体无碰撞，仅用于验证固定附着与
-规划场景状态同步，**不代表物理接触抓取**。夹爪闭合时动态加载 Gazebo
-DetachableJoint，避免插件启动时默认附着使物体偏离初始位置。阶段 4 的真实接触
-抓取、RGB-D 相机和 ArUco 视觉定位均已完成独立运行时验收。
-
-## Pick & Place：阶段 4（真实接触抓取）
-
-`physical_pick_place.launch.py` 是独立试验入口：使用有重力、有物体碰撞的
-`rm65b_pick_place_physical.sdf`、单独的接触摩擦和仿真夹爪控制器参数；
-MTC 仍走原有任务接口，但夹爪绕接近轴旋转 90°，抓取目标沿工具轴偏移
-20 mm，并将预抓取开度设为 1.0 rad。该场景使用 50×70×220 mm、30 g 的
-轻质试验物体；仅在此模式中移除内指网格碰撞，让可替换垫片成为主要接触面，
-视觉、惯量与其他阶段的描述保持不变。物体上的 Gazebo 接触传感器经
-`/pick_place/sim/contact_state` 暴露接触对象；运行时验收要求搬运期间双垫片
-同时接触。物理模式的放置 Cartesian 下移为 1–2 cm，释放目标高于桌面 2 cm，避免原 8–12 cm
-下移把物体压进桌面。不代表任意负载均能稳定抓取。
-该入口**不创建也不调用 Gazebo DetachableJoint**。默认不自动执行：
-
-```bash
-ros2 launch pick_place_sim physical_pick_place.launch.py headless:=true use_rviz:=false
-python3 scripts/verify_mtc_stage2.py  # 在另一终端确认完整规划
-python3 scripts/verify_pick_place_stage4.py  # 另一终端，执行前启动
-ros2 service call /pick_place/execute std_srvs/srv/Trigger '{}'
-```
-
-当前 50×70×220 mm 双垫片接触模型在三次全新仿真进程中完成纯接触抓取、
-搬运、放置并返回 Home；其中两次由 `verify_pick_place_stage4.py` 独立验收，
-双垫片搬运接触样本分别为 524 和 542，最终落点误差分别为 9 mm 和 11 mm，
-Gazebo 物体直立且 PlanningScene 同步。圆形放置区域不约束物体偏航，
-因此运行时判据区分绕竖直轴旋转与倾倒。
-必须以 Gazebo 物体实际位姿、姿态和 MoveIt PlanningScene 同步结果确认完整循环，
-不能把 MTC 规划成功或关节动作完成当作物理抓取成功。此结果仅覆盖上述轻质
-试验物体，并不证明夹爪对其他质量或形状也稳定。
-
-## Pick & Place：阶段 5（Gazebo Harmonic RGB-D 相机）
-
-`rgbd_pick_place.launch.py` 复用阶段 4 场景和任务接口，在 Gazebo 中单独生成
-顶视原生 RGB-D 传感器；不自动执行机械臂动作。`ros_gz_bridge` 输出与 RealSense
-命名接近的 `/camera/camera/color/image_raw`、
-`/camera/camera/depth/image_rect_raw`、两路 `camera_info` 和
-`/camera/camera/depth/color/points`。光学帧为 `camera_color_optical_frame`，
-通过 TF 连到 `base_link`。在已构建工作空间的终端运行：
-
-```bash
-ros2 launch pick_place_sim rgbd_pick_place.launch.py headless:=true use_rviz:=false
-python3 scripts/verify_pick_place_stage5.py  # 另一终端
-```
-
-阶段 5 验收检查实际 640×480 RGB、浮点深度、相机内参、有效点云、时间戳和
-`base_link` 变换；该传感器是仿真相机，并不等同于真实 RealSense 标定。
-
-## Pick & Place：阶段 6（ArUco 视觉定位与统一入口）
-
-`vision_pick_place.launch.py` 使用同一仿真场景和 RGB-D 话题，启动独立的
-`aruco_object_pose` 节点。它检测物体顶部的 4x4、ID 0 标记，以深度和
-CameraInfo 反投影得到标记中心，再按已知物体高度恢复物体中心，发布
-`base_link` 下的 `/object_pose`，并以 `CollisionObject.ADD` 更新 MoveIt
-PlanningScene。MTC 仍只依赖 `/object_pose`，因此真实 RealSense 节点可以
-替换该视觉节点而不修改任务规划器。
-
-规划发布 `plan_ready` 后，视觉输入和 PlanningScene 更新冻结到本次任务的
-初始观测，避免执行中的物体运动反过来修改已规划任务；下一次启动会重新定位。
-完整自动入口：
-
-```bash
-ros2 launch pick_place_sim vision_pick_place.launch.py headless:=true use_rviz:=false
-python3 scripts/verify_pick_place_stage6.py  # 规划-only 视觉/PlanningScene 门槛
-```
-
-最终自动闭环已完成无固定附着的抓取、搬运、放置、释放、撤退和 Home 返回；
-该物理结果仍限定于当前 30 g、50x70x220 mm 试验物体。
-
-## 迁移范围
-
-具体判定见 [迁移清单](docs/迁移记录/迁移清单.md) 和
-[迁移报告](docs/迁移记录/2026-09-20-ROS2_Humble_RM65B夹爪迁移报告.md)。
-其中明确区分项目自建内容、只记录来源的官方内容、教学算法和不应迁移的生成目录。
-
-本仓库仅做 Gazebo 和 MoveIt 仿真。没有连接实机、没有启用串口/Modbus，并且
-CTM2F110E 与仓库中 CTM2F110 模型的等同性、法兰安装变换和真实负载参数尚未确认。
-
-## 工程文档库
-
-主工作空间的项目文档已完整同步到 [`docs/`](docs/)，包括构建报告、实验记录、使用指南、
-机器人参数说明、教材章节和原始系统说明 PDF。建议按以下入口阅读：
-
-- [指南索引](docs/guide/索引.md)：环境、架构、仿真和 MoveIt 使用说明；
-- [实验记录索引](docs/experiments/索引.md)：可复现的验证过程与结果；
-- [构建报告索引](docs/build-reports/索引.md)：工程变更和构建状态；
-- [机器人资料索引](docs/robots/索引.md)：各机械臂和夹爪的参数资料；
-- [教材索引](docs/textbook/教材索引.md)：运动学、规划、控制和双臂系统学习路线。
-
-`docs/迁移记录/` 保留本仓库面向 Ubuntu 22.04、ROS 2 Humble 和 Gazebo Harmonic 的迁移
-清单与报告；其他官方上游资产仍以 `upstream/*.repos` 和相应来源记录为准。
+[实机准备与可迁移清点](docs/build-reports/2026-10-27-RM65B操作面板工作流与迁移清点.md) · [原扩展方案与阶段验收](docs/build-reports/2026-10-22-RM65B带障碍物视觉抓取规划扩展方案.md) · [现场验证与标定计划](docs/build-reports/2026-10-20-RM65B实机验证与标定规划.md)

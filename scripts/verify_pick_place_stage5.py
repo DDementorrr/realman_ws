@@ -21,7 +21,7 @@ def stamp_seconds(header):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--wrist-camera', action='store_true',
-                        help='Verify flange Z +10 cm mounting instead of overhead placement')
+                        help='Verify Link6 +Y 10 cm wrist-camera mounting instead of overhead placement')
     args = parser.parse_args()
     rclpy.init()
     node = rclpy.create_node("verify_pick_place_stage5")
@@ -120,8 +120,8 @@ def main():
                 return 1
             mount = buffer.lookup_transform('Link6', expected_frame, rclpy.time.Time())
             translation = mount.transform.translation
-            if math.dist((translation.x, translation.y, translation.z), (0.0, 0.0, 0.10)) > 0.001:
-                print('FAIL wrist camera is not mounted at flange Z +10 cm', file=sys.stderr)
+            if math.dist((translation.x, translation.y, translation.z), (0.0, 0.10, 0.0)) > 0.001:
+                print('FAIL wrist camera is not mounted at Link6 +Y 10 cm', file=sys.stderr)
                 return 1
         elif pose.transform.translation.z <= 0.8:
             print("FAIL camera frame is not above the worktable", file=sys.stderr)

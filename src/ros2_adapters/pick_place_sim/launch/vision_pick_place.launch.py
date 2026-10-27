@@ -35,32 +35,49 @@ def generate_launch_description():
             "world_file": LaunchConfiguration("world_file"),
         }.items(),
     )
-    vision = Node(
-        package="pick_place_demo", executable="aruco_object_pose", output="screen",
+    perception = Node(
+        package="pick_place_perception", executable="aruco_object_pose", output="screen",
         parameters=[{
             "use_sim_time": True,
             "wait_for_observation": ParameterValue(LaunchConfiguration("wrist_camera"), value_type=bool),
-            "marker_id": 0,
+            "marker_id": ParameterValue(LaunchConfiguration("marker_id"), value_type=int),
+            "marker_center_offset": ParameterValue(LaunchConfiguration("marker_center_offset")),
             "marker_size": 0.045,
+            "object_id": "pick_object",
+            "rgb_image_topic": "/camera/camera/color/image_raw",
+            "depth_image_topic": "/camera/camera/depth/image_rect_raw",
+            "camera_info_topic": "/camera/camera/color/camera_info",
+            "depth_encoding": "32FC1",
+            "depth_scale": 1.0,
+            "max_time_skew": 0.1,
             "object_size": [0.05, 0.07, 0.22],
             "camera_frame": "camera_color_optical_frame",
             "output_frame": "base_link",
         }],
     )
+    scene_sync = Node(package="pick_place_scene", executable="scene_sync", output="screen",
+                      parameters=[{"use_sim_time": True, "allowed_ids": ["pick_object"]}])
     return LaunchDescription([
         DeclareLaunchArgument("headless", default_value="false"),
         DeclareLaunchArgument("use_rviz", default_value="true"),
         DeclareLaunchArgument("auto_execute", default_value="true"),
+        # The wrist observation pose views the object's vertical -X face.
+        DeclareLaunchArgument("marker_id", default_value="1"),
+        DeclareLaunchArgument("marker_center_offset", default_value="[0.026, 0.0, -0.055]"),
         DeclareLaunchArgument("grip_target", default_value="0.40"),
         DeclareLaunchArgument("pick_place_attachment", default_value="false"),
         DeclareLaunchArgument("physical_grasp", default_value="true"),
-        DeclareLaunchArgument("wrist_camera", default_value="false"),
+        DeclareLaunchArgument("wrist_camera", default_value="true"),
         DeclareLaunchArgument("pad_compliance", default_value="false"),
         DeclareLaunchArgument("transport_velocity_scaling", default_value="0.15"),
         DeclareLaunchArgument("transport_acceleration_scaling", default_value="0.10"),
         DeclareLaunchArgument("transport_keep_orientation", default_value="false"),
         DeclareLaunchArgument("transport_orientation_tolerance", default_value="0.2"),
-        DeclareLaunchArgument("observation_xyz", default_value="[0.36, -0.18, 0.67]"),
+        # Keep the side marker in view with a useful working distance and align
+        # the camera laterally with the object's -X face.
+        # The base was lowered by 25 cm; raise the TCP target by the same
+        # amount so the wrist camera keeps its established world observation.
+        DeclareLaunchArgument("observation_xyz", default_value="[0.18, -0.075, 0.40]"),
         DeclareLaunchArgument("observation_quaternion", default_value="[0.5, 0.5, 0.5, 0.5]"),
         DeclareLaunchArgument("physical_contact", default_value="true"),
         DeclareLaunchArgument(
@@ -73,5 +90,6 @@ def generate_launch_description():
              parameters=[{"use_sim_time": True,
                           "observation_xyz": ParameterValue(LaunchConfiguration("observation_xyz")),
                           "observation_quaternion": ParameterValue(LaunchConfiguration("observation_quaternion"))}]),
-        vision,
+        perception,
+        scene_sync,
     ])

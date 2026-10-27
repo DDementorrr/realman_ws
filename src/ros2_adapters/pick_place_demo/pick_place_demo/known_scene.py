@@ -8,6 +8,7 @@ from moveit_msgs.srv import ApplyPlanningScene
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_srvs.srv import Trigger
+from std_msgs.msg import Bool
 from shape_msgs.msg import SolidPrimitive
 
 
@@ -26,8 +27,8 @@ def pose_from_xyz_rpy(values):
 
 
 class KnownScene(Node):
-    def __init__(self):
-        super().__init__("known_pick_place_scene")
+    def __init__(self, **kwargs):
+        super().__init__("known_pick_place_scene", **kwargs)
         self.declare_parameter("frame_id", "world")
         self.declare_parameter("object_id", "pick_object")
         self.declare_parameter("object_size", [0.05, 0.05, 0.22])
@@ -37,6 +38,8 @@ class KnownScene(Node):
         self.declare_parameter("table_size", [0.42, 0.60, 0.06])
         self.declare_parameter("table_pose", [0.52, 0.0, 0.38, 0.0, 0.0, 0.0])
         self.declare_parameter("publish_known_object", True)
+        self.declare_parameter("publish_table", True)
+        self.declare_parameter("environment_ready_topic", "")
         self.frame = self.get_parameter("frame_id").value
         self.object_id = self.get_parameter("object_id").value
         self.object_size = list(self.get_parameter("object_size").value)
@@ -46,18 +49,28 @@ class KnownScene(Node):
         self.table_size = list(self.get_parameter("table_size").value)
         self.table_pose = list(self.get_parameter("table_pose").value)
         self.publish_known_object = self.get_parameter("publish_known_object").value
+        self.publish_table = self.get_parameter("publish_table").value
+        self.environment_topic = self.get_parameter("environment_ready_topic").value
+        self.environment_ready = not bool(self.environment_topic)
         self.apply_client = self.create_client(ApplyPlanningScene, "/apply_planning_scene")
         pose_qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
                               durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.object_pub = self.create_publisher(PoseStamped, "/object_pose", pose_qos)
         self.place_pub = self.create_publisher(PoseStamped, "/place_pose", pose_qos)
+        if self.environment_topic:
+            self.create_subscription(Bool, self.environment_topic, self.on_environment_ready, pose_qos)
         self.reset_service = self.create_service(Trigger, "~/reset_scene", self.reset_scene)
         self.pose_timer = self.create_timer(0.5, self.publish_poses)
         self.create_timer(1.0, self.apply_scene_if_ready)
         self.scene_ready = False
         self.scene_request_pending = False
 
+    def on_environment_ready(self, message):
+        self.environment_ready = message.data
+
     def publish_poses(self):
+        if self.environment_topic and (not self.environment_ready or not self.scene_ready):
+            return
         poses = [(self.place_pub, self.place_pose)]
         if self.publish_known_object:
             poses.append((self.object_pub, self.object_pose))
@@ -89,15 +102,19 @@ class KnownScene(Node):
         self.scene_request_pending = True
         scene = PlanningScene()
         scene.is_diff = True
+        scene.robot_state.is_diff = True
         if add:
-            scene.world.collision_objects = [
-                self.make_object(self.table_id, self.table_size, self.table_pose),
-            ]
+            if self.publish_table:
+                scene.world.collision_objects = [
+                    self.make_object(self.table_id, self.table_size, self.table_pose)]
             if self.publish_known_object:
                 scene.world.collision_objects.append(
                     self.make_object(self.object_id, self.object_size, self.object_pose))
         else:
-            for object_id in (self.table_id, self.object_id) if self.publish_known_object else (self.table_id,):
+            ids = ([self.table_id] if self.publish_table else [])
+            if self.publish_known_object:
+                ids.append(self.object_id)
+            for object_id in ids:
                 obj = CollisionObject()
                 obj.header.frame_id = self.frame
                 obj.id = object_id

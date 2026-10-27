@@ -1,5 +1,7 @@
 # 工程文档分类
 
+当前操作入口：[仿真工作流与接口说明](guide/RM65B仿真工作流与接口说明.md) · [启动与接口命令速查](../README.md)。
+
 本目录按用途分为六类，当前工程主线是 Ubuntu 22.04、ROS 2 Humble、Gazebo Harmonic 的
 RM65B + CTM2F110 工作空间。Panda、Franka、Jazzy 和教学材料保留为历史阅读资料，
 不属于本工程的默认构建链。
@@ -19,10 +21,13 @@ RM65B + CTM2F110 工作空间。Panda、Franka、Jazzy 和教学材料保留为�
 2. [`guide/瑞尔曼RM65B与知行夹爪联合仿真.md`](guide/瑞尔曼RM65B与知行夹爪联合仿真.md)：联合仿真与实机边界。
 3. [`guide/RM65B_PickPlace长时目标任务分类.md`](guide/RM65B_PickPlace长时目标任务分类.md)：长时 Pick & Place 的分类、接口和阶段门槛。
 4. [`guide/RM65B_PickPlace全流程教程.md`](guide/RM65B_PickPlace全流程教程.md)：有界面全流程、接口验证和原理教程。
-5. [`build-reports/2026-10-13-RM65B视觉抓放算法资产盘点与实机隔离迁移方案.md`](build-reports/2026-10-13-RM65B视觉抓放算法资产盘点与实机隔离迁移方案.md)：算法成熟度分类、实机复用边界、工控机隔离和分阶段迁移计划。
-6. [`build-reports/2026-10-15-RealSense无标记定位与Git实机互通方案.md`](build-reports/2026-10-15-RealSense无标记定位与Git实机互通方案.md)：无 ArUco 感知算法选型、Git 提交边界和工控机只读互通流程。
-7. [`build-reports/2026-10-12-PickPlace轨迹评分与腕部相机增量验证.md`](build-reports/2026-10-12-PickPlace轨迹评分与腕部相机增量验证.md)：当前仿真实现和运行证据。
-8. [`build-reports/索引.md`](build-reports/索引.md)：按日期查阅构建与验收报告。
-9. [`迁移记录/迁移清单.md`](迁移记录/迁移清单.md)：迁移范围和完成条件。
+5. [`build-reports/2026-10-19-RM65B抓取起点与松爪接触修正.md`](build-reports/2026-10-19-RM65B抓取起点与松爪接触修正.md)：观察位直达、接触摩擦和本轮构建验收。
+6. [`experiments/2026-10-19-RM65B观察位直达与松爪接触实验.md`](experiments/2026-10-19-RM65B观察位直达与松爪接触实验.md)：本轮运行数据与判定。
+7. [`build-reports/2026-10-20-RM65B实机验证与标定规划.md`](build-reports/2026-10-20-RM65B实机验证与标定规划.md)：从安全准备、只读观测、标定到完整任务的实机分级 gate。
+8. [`build-reports/2026-10-13-RM65B视觉抓放算法资产盘点与实机隔离迁移方案.md`](build-reports/2026-10-13-RM65B视觉抓放算法资产盘点与实机隔离迁移方案.md)：算法成熟度分类、实机复用边界、工控机隔离和分阶段迁移计划。
+9. [`build-reports/2026-10-15-RealSense无标记定位与Git实机互通方案.md`](build-reports/2026-10-15-RealSense无标记定位与Git实机互通方案.md)：无 ArUco 感知算法选型、Git 提交边界和工控机只读互通流程。
+10. [`build-reports/2026-10-12-PickPlace轨迹评分与腕部相机增量验证.md`](build-reports/2026-10-12-PickPlace轨迹评分与腕部相机增量验证.md)：历史仿真实现和运行证据。
+11. [`build-reports/索引.md`](build-reports/索引.md)：按日期查阅构建与验收报告。
+12. [`迁移记录/迁移清单.md`](迁移记录/迁移清单.md)：迁移范围和完成条件。
 
 生成目录 `build/`、`install/`、`log/` 不属于文档或源码分类；它们只保存构建运行产物。

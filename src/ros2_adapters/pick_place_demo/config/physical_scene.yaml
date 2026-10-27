@@ -1,10 +1,12 @@
 known_pick_place_scene:
   ros__parameters:
-    frame_id: world
+    # MoveIt plans in base_link; Gazebo world z=0.52 maps to base_link z=0.37
+    # after the world -> base_link offset of 0.15 m.
+    frame_id: base_link
     object_id: pick_object
     object_size: [0.05, 0.07, 0.22]
-    object_pose: [0.43, -0.18, 0.52, 0.0, 0.0, 0.0]
-    place_pose: [0.43, 0.18, 0.52, 0.0, 0.0, 0.0]
+    object_pose: [0.43, -0.18, 0.37, 0.0, 0.0, 0.0]
+    place_pose: [0.43, 0.18, 0.37, 0.0, 0.0, 0.0]
     table_id: pick_table
     table_size: [0.42, 0.60, 0.06]
-    table_pose: [0.52, 0.0, 0.38, 0.0, 0.0, 0.0]
+    table_pose: [0.52, 0.0, 0.23, 0.0, 0.0, 0.0]

@@ -19,6 +19,7 @@
   <exec_depend>ros_gz_bridge</exec_depend>
   <exec_depend>ros_gz_sim</exec_depend>
   <exec_depend>rviz2</exec_depend>
+  <exec_depend>rm65b_operator_panel</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
   <export><build_type>ament_cmake</build_type></export>
 </package>

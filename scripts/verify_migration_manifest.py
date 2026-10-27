@@ -4,6 +4,7 @@
 from pathlib import Path
 import re
 import sys
+import xml.etree.ElementTree as ET
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,10 +16,34 @@ REQUIRED_PACKAGES = {
     "robot_gazebo",
     "manipulation_bringup",
     "manipulation_moveit_adapter",
+    "rm65b_operator_panel",
     "manipulation_demo",
     "changingtek_gripper_driver",
 }
+BACKEND_INDEPENDENT_PACKAGES = {
+    "pick_place_perception",
+    "pick_place_scene",
+    "pick_place_runtime",
+}
+FORBIDDEN_BACKEND_DEPENDENCIES = {
+    "gazebo",
+    "robot_gazebo",
+    "ros_gz_sim",
+    "ros_gz_bridge",
+    "gz_ros2_control",
+    "pick_place_sim",
+}
 FORBIDDEN_PATH_PARTS = {"manipulation_core", "franka_description", "moveit_resources"}
+DEPENDENCY_TAGS = {
+    "depend",
+    "build_depend",
+    "build_export_depend",
+    "buildtool_depend",
+    "exec_depend",
+    "run_depend",
+    "test_depend",
+    "doc_depend",
+}
 
 
 def fail(message: str) -> None:
@@ -32,6 +57,34 @@ for package in sorted(REQUIRED_PACKAGES):
     if package_xml is None:
         fail(f"missing migrated package {package}")
     print(f"PASS migrated package {package}")
+
+for package in sorted(BACKEND_INDEPENDENT_PACKAGES):
+    candidates = [
+        p
+        for p in sorted((ROOT / "src").rglob("package.xml"))
+        if p.parent.name == package
+        and f"<name>{package}</name>" in p.read_text(encoding="utf-8")
+    ]
+    if not candidates:
+        fail(f"missing reusable package {package}")
+    package_xml = candidates[0]
+    try:
+        root = ET.parse(package_xml).getroot()
+    except ET.ParseError as error:
+        fail(f"cannot parse manifest {package_xml.relative_to(ROOT).as_posix()}: {error}")
+    if (root.findtext("name") or "").strip() != package:
+        fail(f"manifest {package_xml.relative_to(ROOT).as_posix()} does not declare package name {package}")
+    declared = set()
+    for element in root:
+        if element.tag in DEPENDENCY_TAGS and element.text:
+            declared.add(element.text.strip())
+    forbidden = sorted(declared & FORBIDDEN_BACKEND_DEPENDENCIES)
+    if forbidden:
+        fail(
+            f"reusable package {package} must stay simulation-independent but "
+            f"{package_xml.relative_to(ROOT).as_posix()} depends on {', '.join(forbidden)}"
+        )
+    print(f"PASS reusable package {package} has no simulation-only dependencies")
 
 for required in (
     "src/realman_rm65/robot_gazebo/urdf/rm65b_ctm2f110_gz.urdf.xacro",

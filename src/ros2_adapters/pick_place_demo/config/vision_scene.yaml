@@ -4,7 +4,9 @@ known_pick_place_scene:
     publish_known_object: false
     object_id: pick_object
     object_size: [0.05, 0.07, 0.22]
-    place_pose: [0.43, 0.18, 0.52, 0.0, 0.0, 0.0]
+    # base_link is 0.15 m above world; world place z=0.52 becomes base z=0.37.
+    place_pose: [0.43, 0.18, 0.37, 0.0, 0.0, 0.0]
     table_id: pick_table
     table_size: [0.42, 0.60, 0.06]
-    table_pose: [0.52, 0.0, 0.38, 0.0, 0.0, 0.0]
+    # Gazebo world -> base_link is +0.15 m; table world z=0.38 m maps to 0.23 m.
+    table_pose: [0.52, 0.0, 0.23, 0.0, 0.0, 0.0]

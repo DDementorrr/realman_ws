@@ -28,4 +28,5 @@ ctm2f110_hand_controller:
       stopped_velocity_tolerance: 0.02
       goal_time: 1.0
       # Accept contact-limited closure while maintaining the commanded squeeze.
-      ctm2f110_finger_joint: {goal: 0.18}
+      # The box stops the fingers before the nominal 0.40 rad target.
+      ctm2f110_finger_joint: {goal: 0.50}

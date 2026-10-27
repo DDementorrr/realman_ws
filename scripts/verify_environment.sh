@@ -24,7 +24,7 @@ fi
 for p in moveit_ros_planning ros_gz_sim ros_gz_bridge gz_ros2_control tf2_tools controller_manager joint_trajectory_controller; do
   if ros2 pkg prefix "$p" >/dev/null 2>&1; then echo "PASS package $p"; else echo "FAIL package $p"; failed=1; fi
 done
-for p in manipulation_moveit_adapter manipulation_bringup manipulation_demo changingtek_gripper_driver robot_gazebo robot_realman_moveit_config robot_changingtek_description rm_description; do
+for p in rm65b_operator_panel manipulation_moveit_adapter manipulation_bringup manipulation_demo changingtek_gripper_driver robot_gazebo robot_realman_moveit_config robot_changingtek_description rm_description; do
   if ros2 pkg prefix "$p" >/dev/null 2>&1; then echo "PASS workspace package $p"; else echo "FAIL workspace package $p"; failed=1; fi
 done
 timeout 10s ros2 doctor --report >/tmp/manipulation_ros2_doctor.txt 2>&1 || true

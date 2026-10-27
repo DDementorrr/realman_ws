@@ -89,7 +89,10 @@ def main():
             return 1
         if "gazebo" in values:
             gazebo = values["gazebo"].pose.position
-            error = math.dist((visual.x, visual.y, visual.z), (gazebo.x, gazebo.y, gazebo.z))
+            # Gazebo truth is published in world, while visual pose is in the
+            # low base_link frame (world -> base_link z=0.15 m).
+            gazebo_base = (gazebo.x, gazebo.y, gazebo.z - 0.15)
+            error = math.dist((visual.x, visual.y, visual.z), gazebo_base)
             if not args.planning_only and error > 0.02:
                 print(f'FAIL visual localization differs from Gazebo by {error:.3f} m', file=sys.stderr)
                 return 1

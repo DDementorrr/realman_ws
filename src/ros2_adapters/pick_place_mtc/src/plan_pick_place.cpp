@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <future>
@@ -13,11 +14,14 @@
 #include <vector>
 
 #include <Eigen/Geometry>
+#include <ament_index_cpp/get_package_share_directory.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
+#include <sensor_msgs/msg/joint_state.hpp>
 #include <geometry_msgs/msg/vector3_stamped.hpp>
 #include <moveit/task_constructor/solvers.h>
 #include <moveit/task_constructor/stages.h>
 #include <moveit/task_constructor/task.h>
+#include <moveit/planning_scene/planning_scene.h>
 #include <moveit_task_constructor_msgs/msg/solution.hpp>
 #include <moveit_task_constructor_msgs/msg/task_description.hpp>
 #include <moveit_msgs/msg/planning_scene_components.hpp>
@@ -27,6 +31,11 @@
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/string.hpp>
+#include <std_msgs/msg/u_int64.hpp>
+#include <pick_place_mtc/joint_motion_score.hpp>
+#include <pick_place_mtc/task_config.hpp>
+#include <pick_place_mtc/candidate_profile.hpp>
+#include <pick_place_mtc/candidate_audit.hpp>
 
 namespace mtc = moveit::task_constructor;
 using namespace std::chrono_literals;
@@ -38,6 +47,12 @@ public:
     : node_(std::make_shared<rclcpp::Node>(
           "plan_pick_place", rclcpp::NodeOptions().automatically_declare_parameters_from_overrides(true)))
   {
+    config_ = pick_place_mtc::TaskConfig::load(*node_);
+    joint_sub_ = node_->create_subscription<sensor_msgs::msg::JointState>(
+      "/joint_states", rclcpp::SensorDataQoS(), [this](sensor_msgs::msg::JointState::ConstSharedPtr message) {
+        std::lock_guard<std::mutex> lock(feedback_mutex_);
+        feedback_ = *message; feedback_arrived_ = std::chrono::steady_clock::now();
+      });
     object_sub_ = node_->create_subscription<geometry_msgs::msg::PoseStamped>(
       "/object_pose", 10, [this](geometry_msgs::msg::PoseStamped::ConstSharedPtr msg) {
         std::lock_guard<std::mutex> lock(poses_mutex_);
@@ -57,6 +72,23 @@ public:
       "/pick_place/task_description", rclcpp::QoS(1).reliable().transient_local());
     metrics_pub_ = node_->create_publisher<std_msgs::msg::String>(
       "/pick_place/planning_metrics", rclcpp::QoS(1).reliable().transient_local());
+    candidate_revision_pub_ = node_->create_publisher<std_msgs::msg::UInt64>(
+      "/pick_place/candidate_scene_revision", rclcpp::QoS(1).reliable().transient_local());
+    scene_revision_sub_ = node_->create_subscription<std_msgs::msg::UInt64>(
+      "/perception/scene_revision", rclcpp::QoS(1).reliable().transient_local(),
+      [this](std_msgs::msg::UInt64::ConstSharedPtr msg) {
+        scene_revision_.store(msg->data);
+        scene_revision_seen_.store(true);
+      });
+    scene_ready_sub_ = node_->create_subscription<std_msgs::msg::Bool>(
+      "/perception/scene_ready", rclcpp::QoS(1).reliable().transient_local(),
+      [this](std_msgs::msg::Bool::ConstSharedPtr msg) { scene_ready_.store(msg->data); });
+    parameter_guard_ = node_->add_on_set_parameters_callback([this](const std::vector<rclcpp::Parameter>&) {
+      rcl_interfaces::msg::SetParametersResult result;
+      result.successful = !planning_active_.load();
+      result.reason = result.successful ? "" : "candidate inputs are immutable while planning; restart for a new configuration";
+      return result;
+    });
   }
 
   rclcpp::node_interfaces::NodeBaseInterface::SharedPtr node_base() const
@@ -66,109 +98,334 @@ public:
 
   bool run()
   {
-    geometry_msgs::msg::PoseStamped place_pose;
+    task_.loadRobotModel(node_);
+    config_.validate_model(*task_.getRobotModel());
+    model_ = task_.getRobotModel();
+    geometry_msgs::msg::PoseStamped place_pose, target_pose;
     bool scene_ready = false;
-    // RViz and Gazebo GUI startup can take over a minute on a desktop GPU.
-    // Keep the planner alive while MoveIt and the PlanningScene become ready.
-    for (int attempt = 0; rclcpp::ok() && attempt < 180; ++attempt) {
+    const auto deadline = std::chrono::steady_clock::now() +
+      std::chrono::duration<double>(config_.input_wait_timeout_sec);
+    while (rclcpp::ok() && std::chrono::steady_clock::now() < deadline) {
       bool poses_ready = false;
       {
         std::lock_guard<std::mutex> lock(poses_mutex_);
         if (object_pose_ && place_pose_) {
           place_pose = *place_pose_;
+          target_pose = *object_pose_;
           poses_ready = true;
         }
       }
-      scene_ready = poses_ready && has_known_scene();
+      scene_ready = poses_ready && feedback_current() && has_known_scene(deadline) &&
+        (!scene_revision_seen_.load() || scene_ready_.load());
       if (scene_ready) {
         break;
       }
-      std::this_thread::sleep_for(500ms);
+      std::this_thread::sleep_until(std::min(deadline,
+        decltype(deadline)(std::chrono::steady_clock::now() + 50ms)));
     }
     if (!scene_ready) {
-      RCLCPP_ERROR(node_->get_logger(), "Timed out waiting for known poses and MoveIt collision scene");
+      RCLCPP_ERROR(node_->get_logger(), "input_wait_timeout_sec: Timed out waiting for known poses and MoveIt collision scene");
       return false;
     }
+    const bool revision_bound = scene_revision_seen_.load();
+    const auto candidate_revision = scene_revision_.load();
 
-    task_ = make_task(place_pose);
-    try {
-      task_.init();
-    } catch (const mtc::InitStageException& error) {
-      RCLCPP_ERROR_STREAM(node_->get_logger(), "MTC initialization failed: " << error);
-      return false;
+    auto scene_request = std::make_shared<moveit_msgs::srv::GetPlanningScene::Request>();
+    scene_request->components.components = 1023;  // all Humble PlanningSceneComponents
+    auto scene_future = scene_client_->async_send_request(scene_request);
+    if (scene_future.wait_for(5s) != std::future_status::ready) {
+      scene_client_->remove_pending_request(scene_future);
+      throw std::runtime_error("candidate initial scene query timed out");
     }
-    const int candidates = node_->get_parameter_or("planning_candidates", 5);
-    const auto weights = node_->get_parameter_or(
-      "joint_motion_weights", std::vector<double>{5.0, 4.0, 3.0, 2.0, 1.0, 1.0});
-    if (candidates < 1 || candidates > 20 || weights.size() != 6 ||
-        std::any_of(weights.begin(), weights.end(), [](double w) { return !std::isfinite(w) || w <= 0; })) {
-      RCLCPP_ERROR(node_->get_logger(), "Invalid planning_candidates or joint_motion_weights");
-      return false;
+    const auto initial_message = scene_future.get()->scene;
+    auto initial_scene = std::make_shared<planning_scene::PlanningScene>(model_);
+    if (!initial_scene->setPlanningSceneMsg(initial_message))
+      throw std::runtime_error("candidate initial scene import failed");
+    auto number = [this](const std::string& name, double fallback) {
+      const double value = node_->has_parameter(name) ? pick_place_mtc::TaskConfig::read<double>(*node_, name) : fallback;
+      if (!std::isfinite(value) || value <= 0.) throw std::invalid_argument(name+": must be positive and finite");
+      return value;
+    };
+    const double min_clearance = number("candidate_min_clearance_m", .001);
+    const double collision_step = number("candidate_collision_step_rad", .01);
+    const double boundary_tolerance = number("candidate_boundary_tolerance_rad", .001);
+    if (boundary_tolerance > .001) throw std::invalid_argument("candidate boundary tolerance must be <= .001 rad");
+    const double start_tolerance = number("candidate_start_tolerance_rad", .01);
+    if (!feedback_matches(initial_scene->getCurrentState(),start_tolerance))
+      throw std::runtime_error("candidate initial state does not match fresh joint feedback");
+    if (collision_step > .01 || start_tolerance > .01)
+      throw std::invalid_argument("candidate collision step/start tolerance cannot exceed .01 rad");
+    const auto run_id = pick_place_mtc::sha256(std::to_string(std::chrono::system_clock::now().time_since_epoch().count())+
+                                             std::to_string(node_->now().nanoseconds())).substr(0,24);
+    std::string archive_path;
+    if (node_->has_parameter("candidate_archive")) node_->get_parameter("candidate_archive", archive_path);
+    if (archive_path.empty()) archive_path = "/tmp/pick-place-candidates-"+run_id+".yaml";
+    if (std::filesystem::exists(archive_path)) throw std::runtime_error("candidate archive must be a new path");
+    YAML::Node archive;
+    archive["schema"] = "pick_place_candidates/v1"; archive["run_id"] = run_id;
+    archive["rng_seed"] = YAML::Node();
+    archive["rng_policy"] = "installed PipelinePlanner exposes no per-request seed; process RNG is not controlled";
+    archive["scoring"]["units"] = std::vector<std::string>{"m", "weighted_rad", "s", "m", "m", "rad"};
+    archive["scoring"]["functions"] = std::vector<std::string>{"x/2", "x/100", "x/30", "0.01/x", "x/0.5", "x/(2*pi)"};
+    archive["scoring"]["normalization"] = std::vector<double>{2.,100.,30.,.01,.5,2.*M_PI};
+    archive["scoring"]["weights"] = std::vector<double>{.25,.30,.05,.20,.10,.10};
+    archive["scoring"]["boundary_policy"] = "hard reject first; fixed references; no clipping; lower is better; first wins exact ties";
+    archive["binding"]["scene_cdr_hex"] = pick_place_mtc::cdr_hex(initial_message);
+    archive["binding"]["scene_revision_bound"] = revision_bound;
+    archive["binding"]["scene_revision"] = candidate_revision;
+    archive["binding"]["start_tolerance_rad"] = start_tolerance;
+    archive["binding"]["minimum_clearance_m"] = min_clearance;
+    archive["binding"]["collision_step_rad"] = collision_step;
+    archive["binding"]["boundary_tolerance_rad"] = boundary_tolerance;
+    archive["binding"]["object_id"] = config_.object_id;
+    archive["binding"]["target_frame"] = target_pose.header.frame_id;
+    archive["binding"]["target_xyz_m"] = std::vector<double>{target_pose.pose.position.x,target_pose.pose.position.y,target_pose.pose.position.z};
+    archive["binding"]["target_xyzw"] = std::vector<double>{target_pose.pose.orientation.x,target_pose.pose.orientation.y,target_pose.pose.orientation.z,target_pose.pose.orientation.w};
+    archive["binding"]["place_frame"] = place_pose.header.frame_id;
+    archive["binding"]["place_xyz_m"] = std::vector<double>{place_pose.pose.position.x,place_pose.pose.position.y,place_pose.pose.position.z};
+    archive["binding"]["place_xyzw"] = std::vector<double>{place_pose.pose.orientation.x,place_pose.pose.orientation.y,place_pose.pose.orientation.z,place_pose.pose.orientation.w};
+    archive["binding"]["urdf_sha256"] = pick_place_mtc::sha256(node_->get_parameter("robot_description").as_string());
+    archive["binding"]["srdf_sha256"] = pick_place_mtc::sha256(node_->get_parameter("robot_description_semantic").as_string());
+    archive["binding"]["target_cdr_hex"] = pick_place_mtc::cdr_hex(target_pose);
+    archive["binding"]["place_cdr_hex"] = pick_place_mtc::cdr_hex(place_pose);
+    for (const auto* joint : model_->getActiveJointModels())
+      for (const auto& name : joint->getVariableNames())
+        archive["binding"]["start_positions"][name] = initial_scene->getCurrentState().getVariablePosition(name);
+    if (node_->has_parameter("candidate_binding_files"))
+      for (const auto& item : YAML::Load(pick_place_mtc::TaskConfig::read<std::string>(*node_, "candidate_binding_files"))) {
+        const auto path = item.as<std::string>();
+        archive["binding"]["files"][path] = pick_place_mtc::sha256(pick_place_mtc::file_contents(path));
+      }
+    // Bind the actual external robot collision assets, not just URDF URIs.
+    for (const auto& entry : model_->getURDF()->links_) {
+      for (const auto& collision : entry.second->collision_array) {
+        if (!collision->geometry || collision->geometry->type != urdf::Geometry::MESH) continue;
+        auto path = std::static_pointer_cast<urdf::Mesh>(collision->geometry)->filename;
+        if (path.find("package://") == 0) {
+          const auto split = path.find('/',10);
+          if (split == std::string::npos) throw std::runtime_error("invalid collision mesh package URI");
+          path = ament_index_cpp::get_package_share_directory(path.substr(10,split-10))+path.substr(split);
+        } else if (path.find("file://") == 0) path = path.substr(7);
+        if (!std::filesystem::path(path).is_absolute()) throw std::runtime_error("collision mesh requires an absolute or package URI");
+        archive["binding"]["files"][path] = pick_place_mtc::sha256(pick_place_mtc::file_contents(path));
+      }
     }
-    if (!task_.plan(candidates)) {
-      RCLCPP_ERROR(node_->get_logger(), "MTC could not plan the complete Pick and Place task");
-      task_.printState();
-      return false;
+    // All task and model parameters are bound, including baseline tuning.
+    std::map<std::string, rclcpp::Parameter> original_parameters;
+    for (const auto& name : node_->list_parameters({},100).names) {
+      if (name.find("qos_overrides.") == 0 || name.find("start_type") == 0) continue;
+      try {
+        const auto value = node_->get_parameter(name);
+        original_parameters.emplace(name, value);
+        archive["binding"]["planner_parameters"][name] = pick_place_mtc::cdr_hex(value.to_parameter_msg());
+      } catch (const rclcpp::exceptions::ParameterUninitializedException&) {
+        // Kinematics plugins declare optional empty arrays on Humble. They
+        // have no effective value to bind; no fallback replaces a real value.
+        archive["binding"]["uninitialized_parameters"].push_back(name);
+      }
     }
-    // Score actual waypoint travel, including stage boundaries. Bounded
-    // revolute joints use raw deltas: wrapping would hide a commanded long turn.
     mtc::SolutionBaseConstPtr selected;
     double best = std::numeric_limits<double>::infinity();
-    std::string report = "weighted_joint_travel_rad; weights=";
-    for (double w : weights) report += std::to_string(w) + ",";
-    size_t index = 0, selected_index = 0;
-    for (const auto& candidate : task_.solutions()) {
-      moveit_task_constructor_msgs::msg::Solution msg;
-      candidate->toMsg(msg, &task_.introspection());
-      std::map<std::string, double> previous;
-      double score = 0.0;
-      for (const auto& part : msg.sub_trajectory) {
-        const auto& trajectory = part.trajectory.joint_trajectory;
-        for (const auto& point : trajectory.points) {
-          for (size_t j = 0; j < trajectory.joint_names.size(); ++j) {
-            const auto& name = trajectory.joint_names[j];
-            for (size_t axis = 0; axis < weights.size(); ++axis) {
-              if (name != "joint" + std::to_string(axis + 1)) continue;
-              if (j >= point.positions.size() || !std::isfinite(point.positions[j])) {
-                score = std::numeric_limits<double>::infinity();
-                continue;
-              }
-              if (previous.count(name)) score += weights[axis] * std::abs(point.positions[j] - previous[name]);
-              previous[name] = point.positions[j];
-            }
-          }
+    size_t selected_index = 0, selected_task = 0;
+    auto& tasks = tasks_;
+    for (const auto& profile : pick_place_mtc::CandidateProfile::load(*node_, config_)) {
+      for (int repeat=0; repeat<profile.repetitions; ++repeat) {
+        const auto started = std::chrono::steady_clock::now();
+        auto owned_task = std::make_unique<mtc::Task>(make_task(place_pose, profile, initial_scene));
+        auto& working = *owned_task;
+        working.setTimeout(profile.timeout);
+        try { working.init(); working.plan(config_.planning_candidates); }
+        catch (const std::exception& error) {
+          YAML::Node failure;
+          failure["candidate_id"] = run_id+"/"+profile.id+"/"+std::to_string(repeat)+"/failed";
+          failure["profile"] = profile.id; failure["accepted"] = false;
+          failure["rejection"] = std::string("planning_exception:")+error.what();
+          archive["candidates"].push_back(failure);
         }
+        const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count();
+        if (working.solutions().empty()) {
+          YAML::Node failure;
+          failure["candidate_id"] = run_id+"/"+profile.id+"/"+std::to_string(repeat)+"/no_solution";
+          failure["profile"] = profile.id; failure["accepted"] = false;
+          failure["rejection"] = "no_complete_mtc_solution"; failure["planning_time_sec"] = seconds;
+          archive["candidates"].push_back(failure);
+        }
+        size_t index = 0;
+        for (const auto& candidate : working.solutions()) {
+          moveit_task_constructor_msgs::msg::Solution message;
+          candidate->toMsg(message, &working.introspection());
+          pick_place_mtc::CandidateAudit audit(config_, min_clearance, collision_step, boundary_tolerance);
+          YAML::Node record = audit.finish(*candidate, message, seconds);
+          record["candidate_id"] = run_id+"/"+profile.id+"/"+std::to_string(repeat)+"/"+std::to_string(index++);
+          record["profile"] = profile.id; record["repetition"] = repeat;
+          record["grasp_yaw_rad"] = profile.grasp_yaw; record["spin_rad"] = config_.grasp_spin+profile.spin_offset;
+          record["approach_distance_m"] = profile.approach_distance;
+          record["transport_waypoint"] = profile.waypoint; record["planner_id"] = profile.planner_id;
+          record["planning_budget_sec"] = profile.timeout;
+          record["place_direction"] = std::vector<double>(profile.place_direction.begin(),profile.place_direction.end());
+          record["retreat_direction"] = std::vector<double>(profile.retreat_direction.begin(),profile.retreat_direction.end());
+          if (record["accepted"].as<bool>() && record["score"].as<double>() < best) {
+            best = record["score"].as<double>(); selected = candidate;
+            selected_index = archive["candidates"].size(); selected_task = tasks.size();
+          }
+          RCLCPP_INFO(node_->get_logger(), "Candidate %s accepted=%d reason=%s clearance=%.6f checked=%zu",
+            record["candidate_id"].as<std::string>().c_str(), audit.accepted, audit.rejection.c_str(), audit.clearance, audit.checked_states);
+          archive["candidates"].push_back(record);
+        }
+        tasks.push_back(std::move(owned_task));
+        pick_place_mtc::write_archive(archive_path, archive);
+        if (revision_bound && (!scene_ready_.load() || scene_revision_.load() != candidate_revision))
+          throw std::runtime_error("scene changed during candidate generation; archive retained, nothing published");
       }
-      if (previous.size() != 6) score = std::numeric_limits<double>::infinity();
-      report += " candidate[" + std::to_string(index) + "]=" + std::to_string(score);
-      if (score < best) { best = score; selected = candidate; selected_index = index; }
-      ++index;
     }
+    std::set<std::string> accepted_directions, accepted_regions;
+    for (size_t i=0; i<archive["candidates"].size(); ++i) {
+      const auto a = archive["candidates"][i];
+      if (!a["accepted"].as<bool>()) continue;
+      accepted_directions.insert(std::to_string(a["grasp_yaw_rad"].as<double>())+","+std::to_string(a["spin_rad"].as<double>()));
+      for (const auto& cell : a["traversed_regions_0_1m"]) accepted_regions.insert(cell.as<std::string>());
+      for (size_t j=i+1; j<archive["candidates"].size(); ++j) {
+        const auto b = archive["candidates"][j];
+        if (!b["accepted"].as<bool>()) continue;
+        double squared = 0.;
+        for (size_t k=0; k<32; ++k) for (size_t axis=0; axis<3; ++axis) {
+          const double delta = a["path_signature"][k][axis].as<double>()-b["path_signature"][k][axis].as<double>();
+          squared += delta*delta;
+        }
+        std::set<std::string> union_cells, cells_a;
+        for (const auto& cell : a["traversed_regions_0_1m"]) union_cells.insert(cell.as<std::string>());
+        cells_a = union_cells; size_t intersection = 0;
+        for (const auto& cell : b["traversed_regions_0_1m"]) {
+          intersection += cells_a.count(cell.as<std::string>()); union_cells.insert(cell.as<std::string>());
+        }
+        YAML::Node pair;
+        pair["a"] = a["candidate_id"]; pair["b"] = b["candidate_id"];
+        pair["tool_path_rms_m"] = std::sqrt(squared/32.);
+        pair["region_jaccard_similarity"] = double(intersection)/union_cells.size();
+        archive["diversity"]["pairs"].push_back(pair);
+      }
+    }
+    archive["diversity"]["accepted_grasp_direction_spin_count"] = accepted_directions.size();
+    archive["diversity"]["accepted_region_count"] = accepted_regions.size();
+    archive["diversity"]["policy"] = "32 arc-length samples over full task; 10cm world cells; repeated OMPL draws alone prove no diversity";
+    pick_place_mtc::write_archive(archive_path, archive);
     if (!selected) {
-      RCLCPP_ERROR(node_->get_logger(), "No complete candidate with finite six-axis trajectory score");
+      RCLCPP_ERROR(node_->get_logger(), "No complete candidate passed hard constraints; archive: %s", archive_path.c_str());
       return false;
     }
-    report += " selected=" + std::to_string(selected_index);
-    std_msgs::msg::String metrics;
-    metrics.data = report;
-    metrics_pub_->publish(metrics);
-    RCLCPP_INFO(node_->get_logger(), "%s", report.c_str());
-    task_.introspection().publishSolution(*selected);
+    auto& chosen_task = *tasks.at(selected_task);
+    // Re-read the actual scene and state before publication, even without a
+    // revision producer. Consumer performs a fresh independent comparison.
+    auto final_future = scene_client_->async_send_request(scene_request);
+    if (final_future.wait_for(5s) != std::future_status::ready) throw std::runtime_error("final scene binding query timed out");
+    const auto final_scene = final_future.get()->scene;
+    if (!feedback_matches(initial_scene->getCurrentState(),start_tolerance))
+      throw std::runtime_error("candidate publication state does not match fresh joint feedback");
+    const auto& start = archive["binding"]["start_positions"];
+    for (size_t i=0; i<final_scene.robot_state.joint_state.name.size(); ++i) {
+      const auto& name = final_scene.robot_state.joint_state.name[i];
+      if (start[name] && std::abs(start[name].as<double>()-final_scene.robot_state.joint_state.position.at(i)) > start_tolerance)
+        throw std::runtime_error("robot moved during candidate generation");
+    }
+    if (revision_bound && (!scene_ready_.load() || scene_revision_.load() != candidate_revision))
+      throw std::runtime_error("scene revision changed before publication");
+    for (const auto& entry : original_parameters)
+      if (node_->get_parameter(entry.first).to_parameter_msg() != entry.second.to_parameter_msg())
+        throw std::runtime_error("candidate planning/model parameter changed during generation: "+entry.first);
+    auto comparable_scene = [](moveit_msgs::msg::PlanningScene scene) {
+      for (auto& object : scene.world.collision_objects) object.header.stamp = builtin_interfaces::msg::Time();
+      scene.world.octomap.header.stamp = builtin_interfaces::msg::Time();
+      scene.world.octomap.octomap.header.stamp = builtin_interfaces::msg::Time();
+      std::sort(scene.world.collision_objects.begin(), scene.world.collision_objects.end(),
+                [](const auto& a, const auto& b) { return a.id < b.id; });
+      for (auto& tf : scene.fixed_frame_transforms) tf.header.stamp = builtin_interfaces::msg::Time();
+      std::sort(scene.fixed_frame_transforms.begin(), scene.fixed_frame_transforms.end(),
+                [](const auto& a, const auto& b) { return a.child_frame_id < b.child_frame_id; });
+      return scene;
+    };
+    const auto initial_geometry = comparable_scene(initial_message), final_geometry = comparable_scene(final_scene);
+    if (initial_geometry.world != final_geometry.world ||
+        initial_geometry.allowed_collision_matrix != final_geometry.allowed_collision_matrix ||
+        initial_geometry.fixed_frame_transforms != final_geometry.fixed_frame_transforms ||
+        initial_geometry.link_padding != final_geometry.link_padding || initial_geometry.link_scale != final_geometry.link_scale ||
+        initial_geometry.robot_state.attached_collision_objects != final_geometry.robot_state.attached_collision_objects)
+      throw std::runtime_error("candidate scene/model transform changed during generation");
+    for (const auto& name : node_->list_parameters({},100).names) {
+      if (name.find("qos_overrides.") == 0) continue;
+      try {
+        const auto value = pick_place_mtc::cdr_hex(node_->get_parameter(name).to_parameter_msg());
+        archive["binding"]["planner_parameters"][name] = value;
+      } catch (const rclcpp::exceptions::ParameterUninitializedException&) {}
+    }
+    for (const auto& entry : archive["binding"]["files"])
+      if (pick_place_mtc::sha256(pick_place_mtc::file_contents(entry.first.as<std::string>())) != entry.second.as<std::string>())
+        throw std::runtime_error("candidate configuration/calibration file changed during planning");
+    chosen_task.introspection().publishSolution(*selected);
     moveit_task_constructor_msgs::msg::TaskDescription description;
-    task_.introspection().fillTaskDescription(description);
+    chosen_task.introspection().fillTaskDescription(description);
     moveit_task_constructor_msgs::msg::Solution solution;
-    selected->toMsg(solution, &task_.introspection());
+    selected->toMsg(solution, &chosen_task.introspection());
+    archive["selected_index"] = selected_index;
+    archive["selected_id"] = archive["candidates"][selected_index]["candidate_id"];
+    archive["binding"]["solution_cdr_hex"] = pick_place_mtc::cdr_hex(solution);
+    archive["binding"]["description_cdr_hex"] = pick_place_mtc::cdr_hex(description);
+    archive["binding"]["solution_sha256"] = pick_place_mtc::sha256(archive["binding"]["solution_cdr_hex"].as<std::string>());
+    pick_place_mtc::write_archive(archive_path, archive);
+    std_msgs::msg::String metrics;
+    metrics.data = YAML::Dump(archive);
+    metrics_pub_->publish(metrics);
     description_pub_->publish(description);
     solution_pub_->publish(solution);
+    RCLCPP_INFO(node_->get_logger(), "Selected candidate %s score=%.6f; archive: %s",
+      archive["selected_id"].as<std::string>().c_str(), best, archive_path.c_str());
+    if (revision_bound) {
+      std_msgs::msg::UInt64 revision;
+      revision.data = candidate_revision;
+      candidate_revision_pub_->publish(revision);
+    }
     std_msgs::msg::Bool ready;
     ready.data = true;
     plan_ready_pub_->publish(ready);
     RCLCPP_INFO(node_->get_logger(), "Complete MTC solution published; execution is a later stage gate");
+    planning_active_.store(false);
     return true;
   }
 
 private:
-  bool has_known_scene()
+  bool feedback_current()
+  {
+    std::lock_guard<std::mutex> lock(feedback_mutex_);
+    if (!feedback_) return false;
+    const double age = (node_->now()-rclcpp::Time(feedback_->header.stamp)).seconds();
+    return age >= -.05 && age <= 1. &&
+      std::chrono::duration<double>(std::chrono::steady_clock::now()-feedback_arrived_).count() <= 1.;
+  }
+
+  bool feedback_matches(const moveit::core::RobotState& state, double tolerance)
+  {
+    if (!feedback_current()) return false;
+    std::lock_guard<std::mutex> lock(feedback_mutex_);
+    if (!feedback_ || feedback_->name.size() != feedback_->position.size()) return false;
+    std::map<std::string,double> positions;
+    for (size_t i=0; i<feedback_->name.size(); ++i)
+      if (!std::isfinite(feedback_->position[i]) || !positions.emplace(feedback_->name[i],feedback_->position[i]).second)
+        return false;
+    for (const auto* joint : state.getRobotModel()->getActiveJointModels())
+      for (const auto& name : joint->getVariableNames())
+        if (!positions.count(name) || std::abs(positions.at(name)-state.getVariablePosition(name)) > tolerance) return false;
+    return true;
+  }
+
+  geometry_msgs::msg::Vector3Stamped direction(const std::array<double, 3>& values) const
+  {
+    geometry_msgs::msg::Vector3Stamped result;
+    result.header.frame_id = config_.motion_frame;
+    result.vector.x = values[0]; result.vector.y = values[1]; result.vector.z = values[2];
+    return result;
+  }
+
+  template <typename Deadline>
+  bool has_known_scene(const Deadline& deadline)
   {
     if (!scene_client_->service_is_ready()) {
       return false;
@@ -176,112 +433,75 @@ private:
     auto request = std::make_shared<moveit_msgs::srv::GetPlanningScene::Request>();
     request->components.components = moveit_msgs::msg::PlanningSceneComponents::WORLD_OBJECT_GEOMETRY;
     auto future = scene_client_->async_send_request(request);
-    if (future.wait_for(500ms) != std::future_status::ready) {
+    if (future.wait_until(std::min(deadline,
+          Deadline(std::chrono::steady_clock::now() + 500ms))) != std::future_status::ready) {
+      scene_client_->remove_pending_request(future);
       return false;
     }
     bool object_found = false;
     bool table_found = false;
     for (const auto& object : future.get()->scene.world.collision_objects) {
-      object_found |= object.id == "pick_object";
-      table_found |= object.id == "pick_table";
+      object_found |= object.id == config_.object_id;
+      table_found |= object.id == config_.support_id;
     }
     return object_found && table_found;
   }
 
-  mtc::Task make_task(const geometry_msgs::msg::PoseStamped& place_pose)
+  mtc::Task make_task(const geometry_msgs::msg::PoseStamped& place_pose,
+                      const pick_place_mtc::CandidateProfile& profile,
+                      const planning_scene::PlanningScenePtr& initial_scene)
   {
-    constexpr const char* arm = "rm65_arm";
-    constexpr const char* hand = "rm65_hand";
-    constexpr const char* tool = "ctm2f110_tool0";
-    constexpr const char* object = "pick_object";
-    constexpr const char* table = "pick_table";
-    const double grasp_spin = node_->get_parameter_or("grasp_spin", 0.0);
-    const double grasp_depth = node_->get_parameter_or("grasp_depth", 0.0);
-    const double grasp_lateral_offset = node_->get_parameter_or("grasp_lateral_offset", 0.0);
-    const double grip_target = node_->get_parameter_or("grip_target", 0.6);
-    const double open_target = node_->get_parameter_or("open_target", 0.8);
-    const double gripper_motion_scaling = node_->get_parameter_or("gripper_motion_scaling", 1.0);
-    const double motion_velocity_scaling = node_->get_parameter_or("motion_velocity_scaling", 1.0);
-    const double motion_acceleration_scaling = node_->get_parameter_or("motion_acceleration_scaling", 1.0);
-    const double transport_velocity_scaling = node_->get_parameter_or("transport_velocity_scaling", 1.0);
-    const double transport_acceleration_scaling = node_->get_parameter_or("transport_acceleration_scaling", 1.0);
-    const bool transport_keep_orientation = node_->get_parameter_or("transport_keep_orientation", false);
-    const double transport_orientation_tolerance = node_->get_parameter_or("transport_orientation_tolerance", 0.2);
-    const double place_lower_min = node_->get_parameter_or("place_lower_min", 0.08);
-    const double place_lower_max = node_->get_parameter_or("place_lower_max", 0.12);
-    const double place_height_offset = node_->get_parameter_or("place_height_offset", 0.0);
-    if (!std::isfinite(grasp_spin) || !std::isfinite(grasp_depth) ||
-        !std::isfinite(grasp_lateral_offset) || !std::isfinite(grip_target) ||
-        !std::isfinite(open_target) ||
-        !std::isfinite(gripper_motion_scaling) || gripper_motion_scaling <= 0.0 ||
-        gripper_motion_scaling > 1.0 ||
-        grasp_depth < 0.0 || grasp_depth > 0.05 ||
-        std::abs(grasp_lateral_offset) > 0.02 ||
-        grip_target < 0.05 || grip_target > 0.8 ||
-        open_target < 0.8 || open_target > 1.0 ||
-        !std::isfinite(motion_velocity_scaling) || !std::isfinite(motion_acceleration_scaling) ||
-        motion_velocity_scaling <= 0.0 || motion_velocity_scaling > 1.0 ||
-        motion_acceleration_scaling <= 0.0 || motion_acceleration_scaling > 1.0 ||
-        !std::isfinite(transport_velocity_scaling) || !std::isfinite(transport_acceleration_scaling) ||
-        transport_velocity_scaling <= 0.0 || transport_velocity_scaling > 1.0 ||
-        transport_acceleration_scaling <= 0.0 || transport_acceleration_scaling > 1.0 ||
-        !std::isfinite(transport_orientation_tolerance) ||
-        transport_orientation_tolerance < 0.01 || transport_orientation_tolerance > 0.6 ||
-        !std::isfinite(place_lower_min) || !std::isfinite(place_lower_max) ||
-        place_lower_min <= 0.0 || place_lower_max > 0.15 ||
-        place_lower_min > place_lower_max ||
-        !std::isfinite(place_height_offset) ||
-        place_height_offset < 0.0 || place_height_offset > 0.05) {
-      throw std::invalid_argument("Pick and Place motion parameter is outside its supported range");
-    }
+    const auto& arm = config_.arm_group;
+    const auto& hand = config_.hand_group;
+    const auto& tool = config_.tool_link;
+    const auto& object = config_.object_id;
+    const auto& table = config_.support_id;
+    const auto& gripper_links = config_.contact_links;
+    const double grasp_spin = config_.grasp_spin+profile.spin_offset;
+    const double grasp_depth = config_.grasp_depth;
+    const double grasp_lateral_offset = config_.grasp_lateral_offset;
+    const double grip_target = config_.grip_target;
+    const double open_target = config_.open_target;
+    const double gripper_motion_scaling = config_.gripper_motion_scaling;
+    const double motion_velocity_scaling = config_.motion_velocity_scaling;
+    const double motion_acceleration_scaling = config_.motion_acceleration_scaling;
+    const double transport_velocity_scaling = config_.transport_velocity_scaling;
+    const double transport_acceleration_scaling = config_.transport_acceleration_scaling;
+    const bool transport_keep_orientation = config_.transport_keep_orientation;
+    const double transport_orientation_tolerance = config_.transport_orientation_tolerance;
+    const double place_lower_min = config_.place_lower_min;
+    const double place_lower_max = config_.place_lower_max;
+    const double place_height_offset = config_.place_height_offset;
 
     mtc::Task task;
-    task.stages()->setName("RM65B known-pose Pick and Place");
-    task.loadRobotModel(node_);
+    task.stages()->setName(config_.task_name);
+    task.setRobotModel(model_);
     task.setProperty("group", std::string(arm));
-    task.setProperty("eef", std::string("ctm2f110"));
+    task.setProperty("eef", config_.end_effector);
     task.setProperty("ik_frame", std::string(tool));
-    std::vector<std::string> gripper_links;
-    for (const auto& link : task.getRobotModel()->getLinkModelNamesWithCollisionGeometry()) {
-      if (link.rfind("ctm2f110_", 0) == 0) {
-        gripper_links.push_back(link);
-      }
-    }
-    if (gripper_links.empty()) {
-      throw std::runtime_error("No CTM2F110 collision links in robot model");
-    }
-
-    auto ompl = std::make_shared<mtc::solvers::PipelinePlanner>(node_, "ompl");
-    ompl->setPlannerId("RRTConnectkConfigDefault");
+    auto ompl = std::make_shared<mtc::solvers::PipelinePlanner>(node_, config_.pipeline_id);
+    ompl->setPlannerId(profile.planner_id);
     ompl->setMaxVelocityScalingFactor(motion_velocity_scaling);
     ompl->setMaxAccelerationScalingFactor(motion_acceleration_scaling);
-    auto transport_ompl = std::make_shared<mtc::solvers::PipelinePlanner>(node_, "ompl");
-    transport_ompl->setPlannerId("RRTConnectkConfigDefault");
+    auto transport_ompl = std::make_shared<mtc::solvers::PipelinePlanner>(node_, config_.pipeline_id);
+    transport_ompl->setPlannerId(profile.planner_id);
     transport_ompl->setMaxVelocityScalingFactor(transport_velocity_scaling);
     transport_ompl->setMaxAccelerationScalingFactor(transport_acceleration_scaling);
     auto joints = std::make_shared<mtc::solvers::JointInterpolationPlanner>();
     joints->setMaxVelocityScalingFactor(gripper_motion_scaling);
     joints->setMaxAccelerationScalingFactor(gripper_motion_scaling);
     auto cartesian = std::make_shared<mtc::solvers::CartesianPath>();
-    cartesian->setStepSize(0.005);
-    cartesian->setMaxVelocityScalingFactor(std::min(0.10, motion_velocity_scaling));
-    cartesian->setMaxAccelerationScalingFactor(std::min(0.10, motion_acceleration_scaling));
+    cartesian->setStepSize(config_.cartesian_step_m);
+    cartesian->setMaxVelocityScalingFactor(std::min(config_.cartesian_scaling_cap, motion_velocity_scaling));
+    cartesian->setMaxAccelerationScalingFactor(std::min(config_.cartesian_scaling_cap, motion_acceleration_scaling));
 
-    task.add(std::make_unique<mtc::stages::CurrentState>("current state"));
-    {
-      auto home = std::make_unique<mtc::stages::MoveTo>("Home", ompl);
-      home->setGroup(arm);
-      home->setGoal("ready");
-      task.add(std::move(home));
-    }
+    auto initial = std::make_unique<mtc::stages::FixedState>("current state");
+    initial->setState(initial_scene);
+    task.add(std::move(initial));
     {
       auto open = std::make_unique<mtc::stages::MoveTo>("open gripper", joints);
       open->setGroup(hand);
-      if (open_target == 0.8) {
-        open->setGoal("open");
-      } else {
-        open->setGoal(std::map<std::string, double>{{"ctm2f110_finger_joint", open_target}});
-      }
+      open->setGoal(std::map<std::string, double>{{config_.hand_joint, open_target}});
       task.add(std::move(open));
     }
     auto contact = std::make_unique<mtc::stages::ModifyPlanningScene>("allow gripper contact");
@@ -291,7 +511,7 @@ private:
     {
       auto connect = std::make_unique<mtc::stages::Connect>(
         "Pre-Grasp (OMPL)", mtc::stages::Connect::GroupPlannerVector{{arm, ompl}});
-      connect->setTimeout(10.0);
+      connect->setTimeout(profile.timeout);
       task.add(std::move(connect));
     }
 
@@ -303,28 +523,24 @@ private:
       auto approach = std::make_unique<mtc::stages::MoveRelative>("Approach (Cartesian)", cartesian);
       approach->properties().configureInitFrom(mtc::Stage::PARENT, {"group"});
       approach->setIKFrame(tool);
-      approach->setMinMaxDistance(0.08, 0.12);
+      approach->setMinMaxDistance(profile.approach_distance > 0. ? profile.approach_distance : config_.approach_min,
+                                  profile.approach_distance > 0. ? profile.approach_distance : config_.approach_max);
       geometry_msgs::msg::Vector3Stamped down;
-      down.header.frame_id = "world";
-      down.vector.x = 1.0;
+      auto grasp_direction = config_.approach_direction;
+      const double cs = std::cos(profile.grasp_yaw), sn = std::sin(profile.grasp_yaw);
+      grasp_direction[0] = cs*config_.approach_direction[0]-sn*config_.approach_direction[1];
+      grasp_direction[1] = sn*config_.approach_direction[0]+cs*config_.approach_direction[1];
+      down = direction(grasp_direction);
       approach->setDirection(down);
       pick->insert(std::move(approach));
 
-      auto grasp = std::make_unique<mtc::stages::GenerateGraspPose>("generate grasp poses");
+      auto grasp = std::make_unique<mtc::stages::GeneratePose>("generate grasp poses");
       grasp->properties().configureInitFrom(mtc::Stage::PARENT);
-      grasp->setObject(object);
-      if (open_target == 0.8) {
-        grasp->setPreGraspPose("open");
-      } else {
-        moveit_msgs::msg::RobotState pregrasp;
-        pregrasp.is_diff = true;
-        pregrasp.joint_state.name = {"ctm2f110_finger_joint"};
-        pregrasp.joint_state.position = {open_target};
-        grasp->setPreGraspPose(pregrasp);
-      }
-      // The known upright box uses a verified side grasp; add yaw sampling once
-      // full-task planning is stable so this gate stays bounded and repeatable.
-      grasp->setAngleDelta(2 * M_PI);
+      geometry_msgs::msg::PoseStamped grasp_target;
+      grasp_target.header.frame_id = object;
+      grasp_target.pose.orientation.z = std::sin(profile.grasp_yaw/2.);
+      grasp_target.pose.orientation.w = std::cos(profile.grasp_yaw/2.);
+      grasp->setPose(grasp_target);
       grasp->setMonitoredStage(contact_ptr);
       auto ik = std::make_unique<mtc::stages::ComputeIK>("grasp pose IK", std::move(grasp));
       ik->setTimeout(0.25);
@@ -335,7 +551,7 @@ private:
       // tool-axis spin makes the physical jaws close across the box width.
       grasp_frame.linear() =
         (Eigen::AngleAxisd(-grasp_spin, Eigen::Vector3d::UnitZ()) *
-         Eigen::AngleAxisd(-M_PI / 2, Eigen::Vector3d::UnitY())).toRotationMatrix();
+         Eigen::AngleAxisd(config_.grasp_pitch, Eigen::Vector3d::UnitY())).toRotationMatrix();
       // The CTM2F110 pad centers extend about 30 mm beyond tool0. In contact
       // mode, offset the target along tool Z so the pads surround the box
       // center instead of touching only its far edge.
@@ -351,7 +567,7 @@ private:
       pick->insert(std::move(support));
       auto close = std::make_unique<mtc::stages::MoveTo>("Close Gripper", joints);
       close->setGroup(hand);
-      close->setGoal(std::map<std::string, double>{{"ctm2f110_finger_joint", grip_target}});
+      close->setGoal(std::map<std::string, double>{{config_.hand_joint, grip_target}});
       pick->insert(std::move(close));
       auto attach = std::make_unique<mtc::stages::ModifyPlanningScene>("Attach in PlanningScene");
       attach->attachObject(object, tool);
@@ -360,18 +576,27 @@ private:
       auto lift = std::make_unique<mtc::stages::MoveRelative>("Lift (Cartesian)", cartesian);
       lift->properties().configureInitFrom(mtc::Stage::PARENT, {"group"});
       lift->setIKFrame(tool);
-      lift->setMinMaxDistance(0.03, 0.05);
+      lift->setMinMaxDistance(config_.lift_min, config_.lift_max);
       geometry_msgs::msg::Vector3Stamped up;
-      up.header.frame_id = "world";
-      up.vector.z = 1.0;
+      up = direction(config_.lift_direction);
       lift->setDirection(up);
       pick->insert(std::move(lift));
       task.add(std::move(pick));
     }
+    if (!profile.waypoint.empty()) {
+      auto waypoint = std::make_unique<mtc::stages::MoveTo>("Transport waypoint (OMPL)", transport_ompl);
+      waypoint->setGroup(arm); waypoint->setIKFrame(tool); waypoint->setTimeout(profile.timeout);
+      geometry_msgs::msg::PoseStamped pose;
+      pose.header.frame_id = config_.motion_frame;
+      pose.pose.position.x = profile.waypoint[0]; pose.pose.position.y = profile.waypoint[1]; pose.pose.position.z = profile.waypoint[2];
+      pose.pose.orientation.x = profile.waypoint[3]; pose.pose.orientation.y = profile.waypoint[4];
+      pose.pose.orientation.z = profile.waypoint[5]; pose.pose.orientation.w = profile.waypoint[6];
+      waypoint->setGoal(pose); task.add(std::move(waypoint));
+    }
     {
       auto connect = std::make_unique<mtc::stages::Connect>(
         "Transport (OMPL)", mtc::stages::Connect::GroupPlannerVector{{arm, transport_ompl}});
-      connect->setTimeout(transport_keep_orientation ? 30.0 : 10.0);
+      connect->setTimeout(transport_keep_orientation ? config_.constrained_connect_timeout_sec : profile.timeout);
       if (transport_keep_orientation) {
         // The attached-object collision model alone does not keep a friction
         // grasp upright. Bound all rotation-vector axes relative to release
@@ -381,8 +606,8 @@ private:
         if (!object_orientation.coeffs().allFinite() || object_orientation.norm() < 1e-6) {
           throw std::invalid_argument("Invalid place orientation for transport constraint");
         }
-        const Eigen::Quaterniond tool_orientation = object_orientation.normalized() *
-          Eigen::Quaterniond(Eigen::AngleAxisd(M_PI / 2, Eigen::Vector3d::UnitY()) *
+        const Eigen::Quaterniond tool_orientation = object_orientation.normalized() * Eigen::Quaterniond(Eigen::AngleAxisd(profile.grasp_yaw, Eigen::Vector3d::UnitZ())) *
+          Eigen::Quaterniond(Eigen::AngleAxisd(-config_.grasp_pitch, Eigen::Vector3d::UnitY()) *
                              Eigen::AngleAxisd(grasp_spin, Eigen::Vector3d::UnitZ()));
         moveit_msgs::msg::OrientationConstraint orientation;
         orientation.header.frame_id = place_pose.header.frame_id;
@@ -411,8 +636,7 @@ private:
       lower->setIKFrame(tool);
       lower->setMinMaxDistance(place_lower_min, place_lower_max);
       geometry_msgs::msg::Vector3Stamped down;
-      down.header.frame_id = "world";
-      down.vector.z = -1.0;
+      down = direction(profile.place_direction);
       lower->setDirection(down);
       place->insert(std::move(lower));
 
@@ -435,11 +659,7 @@ private:
 
       auto open = std::make_unique<mtc::stages::MoveTo>("Open Gripper", joints);
       open->setGroup(hand);
-      if (open_target == 0.8) {
-        open->setGoal("open");
-      } else {
-        open->setGoal(std::map<std::string, double>{{"ctm2f110_finger_joint", open_target}});
-      }
+      open->setGoal(std::map<std::string, double>{{config_.hand_joint, open_target}});
       place->insert(std::move(open));
       auto detach = std::make_unique<mtc::stages::ModifyPlanningScene>("Detach in PlanningScene");
       detach->detachObject(object, tool);
@@ -447,10 +667,9 @@ private:
       auto retreat = std::make_unique<mtc::stages::MoveRelative>("Retreat (Cartesian)", cartesian);
       retreat->properties().configureInitFrom(mtc::Stage::PARENT, {"group"});
       retreat->setIKFrame(tool);
-      retreat->setMinMaxDistance(0.10, 0.14);
+      retreat->setMinMaxDistance(config_.retreat_min, config_.retreat_max);
       geometry_msgs::msg::Vector3Stamped up;
-      up.header.frame_id = "world";
-      up.vector.x = -1.0;
+      up = direction(profile.retreat_direction);
       retreat->setDirection(up);
       place->insert(std::move(retreat));
       auto no_contact = std::make_unique<mtc::stages::ModifyPlanningScene>("restore collision rules");
@@ -461,41 +680,65 @@ private:
     {
       auto home = std::make_unique<mtc::stages::MoveTo>("return Home", ompl);
       home->setGroup(arm);
-      home->setGoal("ready");
+      home->setGoal(config_.home_state);
       task.add(std::move(home));
     }
     return task;
   }
 
   rclcpp::Node::SharedPtr node_;
+  pick_place_mtc::TaskConfig config_;
+  rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_sub_;
+  std::mutex feedback_mutex_;
+  std::optional<sensor_msgs::msg::JointState> feedback_;
+  std::chrono::steady_clock::time_point feedback_arrived_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr object_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr place_sub_;
   rclcpp::Client<moveit_msgs::srv::GetPlanningScene>::SharedPtr scene_client_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr plan_ready_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr metrics_pub_;
+  rclcpp::Publisher<std_msgs::msg::UInt64>::SharedPtr candidate_revision_pub_;
   rclcpp::Publisher<moveit_task_constructor_msgs::msg::Solution>::SharedPtr solution_pub_;
   rclcpp::Publisher<moveit_task_constructor_msgs::msg::TaskDescription>::SharedPtr description_pub_;
+  rclcpp::Subscription<std_msgs::msg::UInt64>::SharedPtr scene_revision_sub_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr scene_ready_sub_;
+  rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr parameter_guard_;
+  std::atomic<bool> planning_active_{true};
+  std::atomic<uint64_t> scene_revision_{0};
+  std::atomic<bool> scene_revision_seen_{false};
+  std::atomic<bool> scene_ready_{false};
   std::mutex poses_mutex_;
   std::optional<geometry_msgs::msg::PoseStamped> object_pose_;
   std::optional<geometry_msgs::msg::PoseStamped> place_pose_;
+  moveit::core::RobotModelConstPtr model_;
   mtc::Task task_;
+  std::vector<std::unique_ptr<mtc::Task>> tasks_;
 };
 
 int main(int argc, char** argv)
 {
   rclcpp::init(argc, argv);
-  auto planner = std::make_shared<PickPlacePlanner>();
   rclcpp::executors::MultiThreadedExecutor executor;
-  executor.add_node(planner->node_base());
-  std::thread spin_thread([&executor] { executor.spin(); });
-  const bool success = planner->run();
-  if (success) {
-    // Keep MTC introspection alive for RViz until interrupted.
+  std::thread spin_thread;
+  std::exception_ptr spin_error;
+  bool success = false;
+  try {
+    auto planner = std::make_shared<PickPlacePlanner>();
+    executor.add_node(planner->node_base());
+    spin_thread = std::thread([&] {
+      try { executor.spin(); }
+      catch (...) { spin_error = std::current_exception(); rclcpp::shutdown(); }
+    });
+    try { success = planner->run(); }
+    catch (...) { executor.cancel(); spin_thread.join(); throw; }
+    if (!success) executor.cancel();
+    // Successful planning retains introspection until interrupted.
     spin_thread.join();
-  } else {
-    executor.cancel();
-    spin_thread.join();
+    if (spin_error) std::rethrow_exception(spin_error);
+  } catch (const std::exception& error) {
+    RCLCPP_ERROR(rclcpp::get_logger("plan_pick_place"), "%s", error.what());
+    success = false;
   }
-  rclcpp::shutdown();
+  if (rclcpp::ok()) rclcpp::shutdown();
   return success ? 0 : 1;
 }

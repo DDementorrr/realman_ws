@@ -6,15 +6,31 @@
   <maintainer email="ww@example.com">ww</maintainer>
   <license>Apache-2.0</license>
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
   <depend>geometry_msgs</depend>
+  <exec_depend>diagnostic_msgs</exec_depend>
   <depend>rclcpp</depend>
   <depend>std_msgs</depend>
   <depend>std_srvs</depend>
   <build_depend>gz-msgs10</build_depend>
   <build_depend>gz-transport13</build_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>action_msgs</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>moveit_configs_utils</exec_depend>
+  <exec_depend>moveit_msgs</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>robot_gazebo</exec_depend>
+  <exec_depend>robot_realman_moveit_config</exec_depend>
   <exec_depend>pick_place_demo</exec_depend>
+  <exec_depend>pick_place_perception</exec_depend>
+  <exec_depend>pick_place_scene</exec_depend>
   <exec_depend>pick_place_mtc</exec_depend>
+  <exec_depend>pick_place_runtime</exec_depend>
   <exec_depend>moveit_task_constructor_msgs</exec_depend>
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>rcl_interfaces</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
   <export><build_type>ament_cmake</build_type></export>
 </package>

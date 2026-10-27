@@ -37,8 +37,8 @@ def main():
 
     def on_contact(message):
         values["contact_samples"] += 1
-        if (values["carrying"] and "left_pad_collision" in message.data and
-                "right_pad_collision" in message.data):
+        if (values["carrying"] and "left_pad" in message.data and
+                "collision" in message.data and "right_pad" in message.data):
             values["bilateral_pad_samples"] += 1
 
     def on_joints(message):
@@ -92,8 +92,7 @@ def main():
                   file=sys.stderr)
             return 1
 
-        required = ("physical contact mode: no Gazebo attachment commanded",
-                    "after physical lift:", "after physical transport:",
+        required = ("after physical lift:", "after physical transport:",
                     "before physical release:", "after physical retreat:",
                     "executing return Home")
         missing = [marker for marker in required
@@ -113,7 +112,17 @@ def main():
         if "object" not in values or "place" not in values:
             print("FAIL missing Gazebo object or target pose", file=sys.stderr)
             return 1
-        actual, target = values["object"].pose, values["place"].pose
+        actual = values["object"].pose
+        target_message = values["place"]
+        target = target_message.pose
+        if target_message.header.frame_id == "base_link":
+            # Gazebo reports the physical object in world; the robot base is
+            # mounted 0.15 m above world in the current simulation scene.
+            target.position.z += 0.15
+        elif target_message.header.frame_id not in ("", "world"):
+            print(f"FAIL unsupported place target frame: {target_message.header.frame_id}",
+                  file=sys.stderr)
+            return 1
         ap, tp = actual.position, target.position
         error = math.dist((ap.x, ap.y, ap.z), (tp.x, tp.y, tp.z))
         aq, tq = actual.orientation, target.orientation

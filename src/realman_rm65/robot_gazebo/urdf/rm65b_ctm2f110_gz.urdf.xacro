@@ -2,14 +2,18 @@
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="rm65b_ctm2f110_gazebo">
   <xacro:arg name="pick_place_attachment" default="false"/>
   <xacro:arg name="physical_grasp" default="false"/>
+  <xacro:arg name="wrist_camera" default="true"/>
+  <xacro:arg name="wrist_camera_sensor" default="true"/>
   <xacro:include filename="$(find robot_realman_moveit_config)/urdf/rm65b_ctm2f110.urdf.xacro"/>
   <link name="world"/>
-  <joint name="world_to_rm65b" type="fixed"><parent link="world"/><child link="base_link"/></joint>
+  <!-- Low pedestal reference: the robot base is 0.15 m above world ground. -->
+  <joint name="world_to_rm65b" type="fixed"><parent link="world"/><child link="base_link"/><origin xyz="0 0 0.15" rpy="0 0 0"/></joint>
   <xacro:if value="$(arg wrist_camera)">
+    <xacro:if value="$(arg wrist_camera_sensor)">
     <gazebo reference="wrist_camera_link">
       <sensor name="wrist_rgbd" type="rgbd_camera">
-        <!-- Gazebo camera +X maps to flange +Z. -->
-        <pose>0 0 0 0 -1.57079632679 0</pose>
+        <!-- Keep the image upright when Link6 +Z points toward the object. -->
+        <pose>0 0 0 -1.57079632679 -1.57079632679 0</pose>
         <always_on>true</always_on><update_rate>15</update_rate>
         <topic>/pick_place/rgbd</topic>
         <camera><horizontal_fov>1.20</horizontal_fov>
@@ -19,6 +23,7 @@
         </camera>
       </sensor>
     </gazebo>
+    </xacro:if>
   </xacro:if>
   <ros2_control name="RM65BCTM2F110GazeboSystem" type="system">
     <hardware><plugin>gz_ros2_control/GazeboSimSystem</plugin></hardware>
@@ -89,12 +94,12 @@
          its built-in initial attachment would otherwise pull the object away. -->
   </xacro:if>
   <xacro:if value="$(arg physical_grasp)">
-    <!-- Contact-only variant: higher pad friction, no detachable joint. -->
+    <!-- Contact-only variant: moderate pad friction, no detachable joint. -->
     <gazebo reference="ctm2f110_left_pad">
-      <mu1>4.0</mu1><mu2>4.0</mu2>
+      <mu1>1.2</mu1><mu2>1.2</mu2>
     </gazebo>
     <gazebo reference="ctm2f110_right_pad">
-      <mu1>4.0</mu1><mu2>4.0</mu2>
+      <mu1>1.2</mu1><mu2>1.2</mu2>
     </gazebo>
   </xacro:if>
 </robot>

@@ -1,0 +1,13 @@
+# Static U, opening toward -X; metres/radians in the robot base frame.
+# The legacy pick/place pair stays on pick_table. All top faces are z=0.26.
+frame_id: base_link
+boxes:
+  - id: pick_table
+    size: [0.42, 1.10, 0.06]
+    pose: [0.52, 0.0, 0.23, 0.0, 0.0, 0.0]
+  - id: left_table
+    size: [0.60, 0.20, 0.06]
+    pose: [0.01, 0.45, 0.23, 0.0, 0.0, 0.0]
+  - id: right_table
+    size: [0.60, 0.20, 0.06]
+    pose: [0.01, -0.45, 0.23, 0.0, 0.0, 0.0]

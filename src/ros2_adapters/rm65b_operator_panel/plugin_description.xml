@@ -1,0 +1,5 @@
+<library path="rm65b_operator_panel">
+  <class name="rm65b_operator_panel/OperatorPanel" type="rm65b_operator_panel::OperatorPanel" base_class_type="rviz_common::Panel">
+    <description>RM65B target, IK, joint and object telemetry; native MoveIt planning and execution.</description>
+  </class>
+</library>

@@ -1,0 +1,14 @@
+# EXAMPLE simulation assumptions, not measured hardware approval values.
+# Per-side bound = depth + translation + 2*r*sin(rotation/2) + speed*skew
+#                  + tracking + sampling + safety margin.
+object_ids: [depth_obstacles]
+basis: 'Ideal Gazebo depth and exact simulated extrinsics; 3mm depth allowance, 6mm sampling allowance; assumed 3mm tracking and empirical 5mm safety. Verify each bound before execution; not valid for hardware.'
+depth_bound_m: 0.003
+extrinsic_translation_bound_m: 0.0
+extrinsic_rotation_bound_rad: 0.0
+observation_range_m: 2.0
+relative_speed_bound_mps: 0.1
+time_skew_bound_sec: 0.15
+tracking_bound_m: 0.003
+sampling_bound_m: 0.006
+safety_margin_m: 0.005

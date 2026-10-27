@@ -1,0 +1,49 @@
+plan_pick_place:
+  ros__parameters:
+    task_name: RM65B known-pose Pick and Place
+    arm_group: rm65_arm
+    hand_group: rm65_hand
+    end_effector: ctm2f110
+    tool_link: ctm2f110_tool0
+    hand_joint: ctm2f110_finger_joint
+    object_id: pick_object
+    support_id: pick_table
+    motion_frame: world
+    home_state: ready
+    pipeline_id: ompl
+    planner_id: RRTConnectkConfigDefault
+    contact_links: [ctm2f110_base_link, ctm2f110_leftout_Link, ctm2f110_left_kckle, ctm2f110_leftinn_Link, ctm2f110_left_pad, ctm2f110_rightout_Link, ctm2f110_right_kckle, ctm2f110_rightinn_Link, ctm2f110_right_pad]
+    scoring_joints: [joint1, joint2, joint3, joint4, joint5, joint6]
+    joint_motion_weights: [5.0, 4.0, 3.0, 2.0, 1.0, 1.0]
+    planning_candidates: 5
+    input_wait_timeout_sec: 90.0
+    approach_min: 0.08
+    approach_max: 0.12
+    lift_min: 0.03
+    lift_max: 0.05
+    retreat_min: 0.10
+    retreat_max: 0.14
+    approach_direction: [1.0, 0.0, 0.0]
+    lift_direction: [0.0, 0.0, 1.0]
+    lower_direction: [0.0, 0.0, -1.0]
+    retreat_direction: [-1.0, 0.0, 0.0]
+    grasp_pitch: -1.5707963267948966
+    grasp_spin: 0.0
+    grasp_depth: 0.0
+    grasp_lateral_offset: 0.0
+    grip_target: 0.6
+    open_target: 0.8
+    gripper_motion_scaling: 1.0
+    motion_velocity_scaling: 1.0
+    motion_acceleration_scaling: 1.0
+    transport_velocity_scaling: 1.0
+    transport_acceleration_scaling: 1.0
+    transport_keep_orientation: false
+    transport_orientation_tolerance: 0.2
+    place_lower_min: 0.08
+    place_lower_max: 0.12
+    place_height_offset: 0.0
+    cartesian_step_m: 0.005
+    cartesian_scaling_cap: 0.10
+    connect_timeout_sec: 10.0
+    constrained_connect_timeout_sec: 30.0

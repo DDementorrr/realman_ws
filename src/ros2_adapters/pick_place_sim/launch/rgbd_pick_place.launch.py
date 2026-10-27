@@ -77,7 +77,7 @@ def generate_launch_description():
         DeclareLaunchArgument("grip_target", default_value="0.40"),
         DeclareLaunchArgument("pick_place_attachment", default_value="false"),
         DeclareLaunchArgument("physical_grasp", default_value="true"),
-        DeclareLaunchArgument("wrist_camera", default_value="false"),
+        DeclareLaunchArgument("wrist_camera", default_value="true"),
         DeclareLaunchArgument("pad_compliance", default_value="false"),
         DeclareLaunchArgument("transport_velocity_scaling", default_value="0.15"),
         DeclareLaunchArgument("transport_acceleration_scaling", default_value="0.10"),

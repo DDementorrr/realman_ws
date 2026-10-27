@@ -75,7 +75,13 @@ def main():
             xyz = (obj.pose.position.x + obj.primitive_poses[0].position.x,
                    obj.pose.position.y + obj.primitive_poses[0].position.y,
                    obj.pose.position.z + obj.primitive_poses[0].position.z)
-            require(near(xyz, PARAMS[pose_key][:3]), f"{PARAMS[key]} MoveIt pose matches configuration")
+            expected = list(PARAMS[pose_key][:3])
+            # MoveIt stores world geometry in its planning frame. With the
+            # low simulation pedestal this is base_link, so account for the
+            # world -> base_link z offset when comparing the world config.
+            if obj.header.frame_id == "base_link" and PARAMS["frame_id"] == "world":
+                expected[2] -= 0.15
+            require(near(xyz, expected), f"{PARAMS[key]} MoveIt pose matches configuration")
 
         for model, key in ((PARAMS["table_id"], "table_pose"),
                            (PARAMS["object_id"], "object_pose")):
