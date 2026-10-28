@@ -15,6 +15,9 @@
 #include <QSignalBlocker>
 #include <QDockWidget>
 #include <QMainWindow>
+#include <QFontDatabase>
+#include <QFontMetrics>
+#include <QDebug>
 #include <cmath>
 #include <algorithm>
 
@@ -42,6 +45,15 @@ moveit_rviz_plugin::MotionPlanningDisplay* findDisplay(rviz_common::DisplayGroup
 }
 }
 OperatorPanel::OperatorPanel(QWidget* parent) : Panel(parent) {
+  // Select a real CJK font for this panel; never change RViz's global font.
+  const QFontDatabase fonts;
+  bool cjk_font = false;
+  for (const auto& family : fonts.families(QFontDatabase::SimplifiedChinese)) {
+    QFont candidate(font()); candidate.setFamily(family);
+    if (!QFontMetrics(candidate).inFont(QChar(0x5173))) continue;  // 关
+    setFont(candidate); cjk_font = true; break;
+  }
+  if (!cjk_font) qWarning() << "RM65B panel: CJK font missing; run scripts/setup_operator_panel_fonts.sh and restart RViz.";
   auto* layout = new QVBoxLayout(this);
   connection_ = new QLabel("等待 MoveIt", this);
   connection_->setWordWrap(true); layout->addWidget(connection_);
@@ -63,19 +75,24 @@ OperatorPanel::OperatorPanel(QWidget* parent) : Panel(parent) {
   auto* copy = new QPushButton("读取当前", this); copy->setObjectName("copy_current");
   buttons->addWidget(pose_apply_); buttons->addWidget(copy); layout->addLayout(buttons);
   joints_ = new QTableWidget(0, 6, this); joints_->setObjectName("joint_table");
-  joints_->setHorizontalHeaderLabels({"关节", "当前 rad", "目标 rad", "模型上限 rad/s", "请求上限 rad/s", "生效上限 rad/s"});
+  joints_->setHorizontalHeaderLabels({"关节", "当前 rad", "目标 rad", "模型上限\nrad/s", "请求上限\nrad/s", "生效上限\nrad/s"});
   joints_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
   joints_->setMinimumHeight(220); layout->addWidget(joints_);
   joint_apply_ = new QPushButton("应用关节", this); joint_apply_->setObjectName("apply_joints");
   layout->addWidget(joint_apply_);
   auto* speed = new QHBoxLayout; speed->addWidget(new QLabel("TCP 上限 m/s", this));
-  tcp_limit_ = spin(this, 0, 2, 4); tcp_limit_->setObjectName("tcp_speed_limit"); tcp_limit_->setValue(0.1); speed->addWidget(tcp_limit_);
-  limits_apply_ = new QPushButton("应用限速", this); limits_apply_->setObjectName("apply_limits"); speed->addWidget(limits_apply_); layout->addLayout(speed);
+  tcp_limit_ = spin(this, 0, 2, 4); tcp_limit_->setObjectName("tcp_speed_limit"); tcp_limit_->setValue(0.1);
+  tcp_limit_->setSingleStep(0.05); tcp_limit_->setSpecialValueText("不限"); speed->addWidget(tcp_limit_);
+  speed->addWidget(new QLabel("规划倍率", this));
+  requested_scale_ = spin(this, 0.000001, 1, 6); requested_scale_->setObjectName("requested_velocity_scaling");
+  requested_scale_->setSingleStep(0.05); requested_scale_->setValue(0.1); speed->addWidget(requested_scale_);
+  layout->addLayout(speed);
+  limits_apply_ = new QPushButton("应用限速", this); limits_apply_->setObjectName("apply_limits"); layout->addWidget(limits_apply_);
   limits_label_ = new QLabel("限速：--", this); limits_label_->setWordWrap(true); layout->addWidget(limits_label_);
   object_source_ = new QComboBox(this); object_source_->setObjectName("object_source");
   object_source_->addItems({"/object_pose", "/pick_place/sim/object_pose [sim]"});
   layout->addWidget(object_source_);
-  task_execute_ = new QPushButton("执行 Pick & Place", this); task_execute_->setObjectName("execute_pick_place");
+  task_execute_ = new QPushButton("执行抓放", this); task_execute_->setObjectName("execute_pick_place");
   layout->addWidget(task_execute_);
   status_ = new QLabel("未连接", this); status_->setObjectName("operator_status"); status_->setWordWrap(true); layout->addWidget(status_);
   connect(pose_apply_, &QPushButton::clicked, this, [this] {
@@ -94,6 +111,7 @@ OperatorPanel::OperatorPanel(QWidget* parent) : Panel(parent) {
   connect(joint_apply_, &QPushButton::clicked, this, &OperatorPanel::applyJoints);
   connect(limits_apply_, &QPushButton::clicked, this, &OperatorPanel::applyLimits);
   connect(tcp_limit_, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this] { limits_dirty_ = true; invalidate(); });
+  connect(requested_scale_, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this] { limits_dirty_ = true; invalidate(); });
   connect(object_source_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this] { received_object_ = false; });
   connect(task_execute_, &QPushButton::clicked, this, [this] {
     if (!task_client_ || !task_client_->service_is_ready()) { notice("Pick & Place 服务未就绪"); return; }
@@ -149,7 +167,8 @@ bool OperatorPanel::bindDisplay() {
   plan_ = native_->findChild<QPushButton*>("plan_button");
   plan_execute_ = native_->findChild<QPushButton*>("plan_and_execute_button");
   if (!native_scale_ || !execute_ || !plan_ || !plan_execute_) { notice("原生 MoveIt 控件版本不兼容；面板未接管目标"); return false; }
-  native_scale_->setDecimals(6); native_scale_->setMinimum(0.000001);
+  native_scale_->setDecimals(6); native_scale_->setRange(0.000001, 1.0); native_scale_->setSingleStep(0.01);
+  { QSignalBlocker block(requested_scale_); requested_scale_->setValue(native_scale_->value()); }
   for (auto* button : {execute_.data(), plan_.data(), plan_execute_.data()}) button->installEventFilter(this);
   connect(display_, &moveit_rviz_plugin::MotionPlanningDisplay::queryGoalStateChanged, this, &OperatorPanel::syncGoal, Qt::QueuedConnection);
   connect(native_, &moveit_rviz_plugin::MotionPlanningFrame::planningFinished, this, [this] {
@@ -164,6 +183,7 @@ bool OperatorPanel::bindDisplay() {
   connect(native_scale_, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double value) {
     if (syncing_) return;
     invalidate();
+    { QSignalBlocker block(requested_scale_); requested_scale_->setValue(value); }
     if (initialized_ && value > cap_) { QSignalBlocker block(native_scale_); native_scale_->setValue(cap_); }
     if (initialized_) publishLimits();
   });
@@ -300,7 +320,9 @@ void OperatorPanel::applyLimits() {
   if (tcp_limit_->value() > 0 && tcp_bound > 0) cap_ = std::min(cap_, tcp_limit_->value()/tcp_bound);
   cap_ = std::floor(cap_*1e6)/1e6;
   if (cap_ < 1e-6) { limits_dirty_ = true; invalidate(); notice("限速低于支持精度"); return; }
-  syncing_ = true; native_scale_->setValue(std::min(native_scale_->value(), cap_)); syncing_ = false;
+  // Keep the user's request separate from the constrained value. Reusing the
+  // previous effective value would make a low TCP cap permanently latch slow speed.
+  syncing_ = true; native_scale_->setValue(std::min(requested_scale_->value(), cap_)); syncing_ = false;
   limits_dirty_ = false; invalidate(); publishLimits(); notice("限速已更新，需 Plan");
 }
 void OperatorPanel::publishLimits() {
@@ -312,9 +334,11 @@ void OperatorPanel::publishLimits() {
   }
   data["joint_names"] = names; data["requested_rad_s"] = requested; data["effective_rad_s"] = effective;
   data["jacobian_radius_bounds_m"] = radii; data["tcp_translation_m_s"] = tcp_limit_->value(); data["native_velocity_scaling"] = scale;
+  data["requested_velocity_scaling"] = requested_scale_->value(); data["maximum_velocity_scaling"] = cap_;
+  data["tcp_limit_enabled"] = tcp_limit_->value() > 0;
   data["scope"] = "this RViz native MotionPlanning only; conservative common scaling";
   std_msgs::msg::String msg; msg.data = QJsonDocument(data).toJson(QJsonDocument::Compact).toStdString(); limits_pub_->publish(msg);
-  limits_label_->setText(QString("速度缩放 %1 / 上限 %2").arg(scale, 0, 'f', 6).arg(cap_, 0, 'f', 6));
+  limits_label_->setText(QString("生效倍率 %1 / 约束上限 %2").arg(scale, 0, 'f', 6).arg(cap_, 0, 'f', 6));
 }
 void OperatorPanel::receiveObject(const geometry_msgs::msg::PoseStamped& p, bool truth) {
   if (truth != (object_source_->currentIndex() == 1)) return;

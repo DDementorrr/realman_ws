@@ -23,7 +23,7 @@ if(BUILD_TESTING)
   add_executable(native_panel_probe test/native_panel_probe.cpp)
   target_compile_features(native_panel_probe PUBLIC cxx_std_17)
   ament_target_dependencies(native_panel_probe rviz_common rviz_rendering moveit_ros_visualization rclcpp geometry_msgs sensor_msgs std_msgs visualization_msgs)
-  target_link_libraries(native_panel_probe Qt5::Widgets Qt5::Test moveit_ros_visualization::moveit_motion_planning_rviz_plugin_core)
+  target_link_libraries(native_panel_probe ${PROJECT_NAME} Qt5::Widgets Qt5::Test moveit_ros_visualization::moveit_motion_planning_rviz_plugin_core)
   install(TARGETS native_panel_probe DESTINATION lib/${PROJECT_NAME})
 endif()
 

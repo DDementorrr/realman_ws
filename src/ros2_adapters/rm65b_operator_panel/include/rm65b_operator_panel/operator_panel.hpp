@@ -62,7 +62,7 @@ private:
   QTimer timer_;
   QTableWidget *poses_, *joints_;
   QLabel *status_, *connection_, *limits_label_;
-  QDoubleSpinBox *tcp_limit_;
+  QDoubleSpinBox *tcp_limit_, *requested_scale_;
   QComboBox* object_source_;
   QPushButton *pose_apply_, *joint_apply_, *limits_apply_, *task_execute_;
   std::vector<QDoubleSpinBox*> pose_edits_, joint_edits_, limit_edits_;

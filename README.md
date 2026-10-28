@@ -2,6 +2,8 @@
 
 Ubuntu 22.04 · ROS 2 Humble · Gazebo Harmonic。流程解释、场景差异、验收边界见 [最新工作流说明](docs/guide/RM65B仿真工作流与接口说明.md)；[指南索引](docs/guide/索引.md)。以下运动指令只用于仿真。
 
+实机：[测试与标定清单](docs/guide/RM65B实机测试与标定清单.md) · [准备状态记录](docs/experiments/2026-10-28-RM65B实机准备状态与验收记录.md)。
+
 ## 1. 环境与构建
 
 每个终端都先执行；同一轮使用相同 `ROS_DOMAIN_ID`、`GZ_PARTITION`。
@@ -12,6 +14,12 @@ source scripts/source_pick_place_env.sh
 # 仅增量安装自定义 RViz 面板，不修改 RViz/MoveIt 源码：
 bash scripts/build_operator_panel.sh
 source scripts/source_pick_place_env.sh
+```
+
+中文显示为方框时，执行后重新启动 RViz：
+
+```bash
+bash scripts/setup_operator_panel_fonts.sh
 ```
 
 新机器首次安装：
@@ -62,6 +70,8 @@ ros2 launch pick_place_sim obstacle_pick_place.launch.py obstacle_source:=gazebo
 ## 3. 发布目标与执行
 
 RViz：`Panels → Add New Panel → rm65b_operator_panel/OperatorPanel`（默认配置自动加载）。拖动原生目标球，或修改面板 TCP/关节并点击应用；先原生 **Plan**，再原生 **Execute**。面板中的 Pick & Place 按钮走独立任务服务。面板限速只约束此 RViz 的原生规划，其他节点的限速须分别配置。
+
+调速：编辑关节“请求上限”、TCP 上限（0—2 m/s；0 显示“不限”）及“规划倍率”（大于 0、至多 1），点击 **应用限速 → Plan → Execute**。生效值受所有约束共同限制；默认 TCP 0.1 m/s 不是输入上限。
 
 ```bash
 # 新接口：只更新 RViz 目标、进行 IK，不发起运动。需 RViz 面板运行。

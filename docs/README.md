@@ -2,6 +2,8 @@
 
 当前操作入口：[仿真工作流与接口说明](guide/RM65B仿真工作流与接口说明.md) · [启动与接口命令速查](../README.md)。
 
+实机准备入口：[测试与标定清单](guide/RM65B实机测试与标定清单.md) · [当前证据状态](experiments/2026-10-28-RM65B实机准备状态与验收记录.md)。
+
 本目录按用途分为六类，当前工程主线是 Ubuntu 22.04、ROS 2 Humble、Gazebo Harmonic 的
 RM65B + CTM2F110 工作空间。Panda、Franka、Jazzy 和教学材料保留为历史阅读资料，
 不属于本工程的默认构建链。
